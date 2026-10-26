@@ -1,7 +1,8 @@
 import "server-only";
 import { and, asc, eq, gte, inArray, type SQL } from "drizzle-orm";
+import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { requireUser } from "@/lib/dal/auth";
+import { requireAdmin, requireUser } from "@/lib/dal/auth";
 import { todayInVienna } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
@@ -12,6 +13,7 @@ import {
   type StaffingStatus,
   staffingStatus,
 } from "@/lib/staffing";
+import { uuidSchema } from "@/lib/validation";
 
 export type SignupView = {
   profileId: string;
@@ -167,4 +169,22 @@ export async function getUpcomingKurse(): Promise<KursView[]> {
     .filter((kurs) => kurs.termine.length > 0)
     .sort((a, b) => a.termine[0].date.localeCompare(b.termine[0].date))
     .map(withoutContacts);
+}
+
+/** All Kurse (also those without Termine) with contact details; past Termine on request. */
+export async function getAdminKurse(opts: {
+  includePast: boolean;
+}): Promise<KursView<AdminSignupView>[]> {
+  await requireAdmin();
+  return loadKursViews({ upcomingOnly: !opts.includePast });
+}
+
+export async function getAdminKurs(
+  id: string,
+): Promise<KursView<AdminSignupView>> {
+  await requireAdmin();
+  if (!uuidSchema.safeParse(id).success) notFound();
+  const [kurs] = await loadKursViews({ kursId: id });
+  if (!kurs) notFound();
+  return kurs;
 }
