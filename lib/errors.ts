@@ -11,6 +11,8 @@ const MESSAGES = {
   "admin-aus-env":
     "Dieser Admin ist fix eingetragen und kann hier nicht geändert werden.",
   "selbst-entfernen": "Du kannst dich nicht selbst entfernen.",
+  "zu-viele-anfragen":
+    "Bitte warte einen Moment, bevor du einen neuen Login-Link anforderst.",
 } as const;
 
 export type DomainErrorCode = keyof typeof MESSAGES;
