@@ -1,6 +1,7 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { cache } from "react";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
@@ -23,6 +24,8 @@ export function isEnvAdmin(email: string): boolean {
 
 /** The logged-in user with their profile, or null. Deduplicated per request. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  // Session checks compare token expiry with the current time: request-time only.
+  await connection();
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
   const userId = data?.claims?.sub;

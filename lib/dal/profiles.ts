@@ -1,6 +1,7 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { authUsers } from "drizzle-orm/supabase";
+import { requireUser } from "@/lib/dal/auth";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { supabaseService } from "@/lib/supabase/service";
@@ -39,4 +40,15 @@ export async function createAccount(input: {
     })
     .onConflictDoNothing();
   return userId;
+}
+
+export async function updateOwnProfile(input: {
+  fullName: string;
+  phone: string | null;
+}): Promise<void> {
+  const user = await requireUser();
+  await db
+    .update(profiles)
+    .set({ fullName: input.fullName, phone: input.phone })
+    .where(eq(profiles.id, user.id));
 }

@@ -42,7 +42,17 @@ async function loadTermine(
   lock: boolean,
 ): Promise<Map<string, LockedTermin>> {
   if (ids.length === 0) return new Map();
-  const query = tx
+  if (lock) {
+    // Lock in a single-table query: Drizzle renders `FOR UPDATE OF` schema-qualified
+    // ("app"."termine"), which Postgres rejects.
+    await tx
+      .select({ id: termine.id })
+      .from(termine)
+      .where(inArray(termine.id, ids))
+      .orderBy(asc(termine.id))
+      .for("update");
+  }
+  const rows = await tx
     .select({
       id: termine.id,
       kursId: termine.kursId,
@@ -58,7 +68,6 @@ async function loadTermine(
     .innerJoin(kurse, eq(termine.kursId, kurse.id))
     .where(inArray(termine.id, ids))
     .orderBy(asc(termine.id));
-  const rows = lock ? await query.for("update", { of: termine }) : await query;
   return new Map(rows.map((row) => [row.id, row]));
 }
 

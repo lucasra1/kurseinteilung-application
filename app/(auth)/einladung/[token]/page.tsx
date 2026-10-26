@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -11,14 +12,32 @@ import { isValidInviteToken } from "@/lib/dal/settings";
 import { DomainError } from "@/lib/errors";
 import { InviteForm } from "./invite-form";
 
-export default async function InvitePage({
+export default function InvitePage({
   params,
 }: PageProps<"/einladung/[token]">) {
+  return (
+    <Card>
+      <Suspense
+        fallback={
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Lädt…</p>
+          </CardContent>
+        }
+      >
+        <InviteContent params={params} />
+      </Suspense>
+    </Card>
+  );
+}
+
+async function InviteContent({
+  params,
+}: Pick<PageProps<"/einladung/[token]">, "params">) {
   const { token } = await params;
 
   if (!(await isValidInviteToken(token))) {
     return (
-      <Card>
+      <>
         <CardHeader>
           <CardTitle>Link ungültig</CardTitle>
           <CardDescription>
@@ -33,12 +52,12 @@ export default async function InvitePage({
             Zum Login
           </Link>
         </CardContent>
-      </Card>
+      </>
     );
   }
 
   return (
-    <Card>
+    <>
       <CardHeader>
         <CardTitle>Registrieren</CardTitle>
         <CardDescription>
@@ -48,6 +67,6 @@ export default async function InvitePage({
       <CardContent>
         <InviteForm token={token} />
       </CardContent>
-    </Card>
+    </>
   );
 }
