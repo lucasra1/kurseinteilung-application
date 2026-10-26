@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kurseinteilung
 
-## Getting Started
+Trainer:innen tragen sich selbst für Kurs-Termine ein. Ein Admin legt Kurse und Termine an, verschickt einen Einladungslink und sieht auf einen Blick, wo noch Trainer oder Backups fehlen.
 
-First, run the development server:
+- Spezifikation: [`docs/superpowers/specs/2026-10-26-kurseinteilung-design.md`](docs/superpowers/specs/2026-10-26-kurseinteilung-design.md)
+- Stack: Next.js 16 (Cache Components), Supabase (Postgres + Magic-Link-Login), Drizzle, Resend, Vercel
+
+## Lokale Entwicklung
+
+Voraussetzungen: Node 22+, pnpm, Docker.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm sb:start                          # lokales Supabase in Docker
+pnpm exec supabase status -o env       # Werte für .env.local
+cp .env.example .env.local             # und ausfüllen (siehe Kommentare)
+pnpm db:migrate                        # Tabellen im Schema "app" anlegen
+pnpm dev                               # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Login-Mails landen lokal in **Mailpit**: http://127.0.0.1:54324
+- Benachrichtigungs-Mails werden lokal (ohne `RESEND_API_KEY`) in der Konsole ausgegeben.
+- Die E-Mail in `ADMIN_EMAILS` kann sich direkt unter `/login` anmelden und ist Admin.
+- Den Einladungslink für weitere Personen findest du als Admin unter **Admin → Einstellungen**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Weitere Befehle: `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm db:generate` (nach Änderungen an `lib/db/schema.ts`), `pnpm sb:stop`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deployment
 
-## Learn More
+Alles läuft in den Gratis-Tarifen. Diese Schritte kann nur der Eigentümer der Accounts machen.
 
-To learn more about Next.js, take a look at the following resources:
+### 1. Domain (Cloudflare Registrar)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Domain bei Cloudflare kaufen, z. B. `kurseinteilung.org`. Den Namen „Rotes Kreuz“ und das Emblem nicht verwenden (gesetzlich geschützt).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. Resend (E-Mail-Versand)
 
-## Deploy on Vercel
+1. Account auf resend.com anlegen, **Domains → Add Domain** (am besten eine Subdomain wie `mail.<domain>`).
+2. Die angezeigten DNS-Einträge (SPF, DKIM, ggf. MX) in Cloudflare unter **DNS** anlegen und verifizieren lassen.
+3. Unter **API Keys** einen Key erstellen. Er wird zweimal gebraucht: als SMTP-Passwort in Supabase und als `RESEND_API_KEY` in Vercel.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 3. Supabase-Projekt
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Neues Projekt auf supabase.com anlegen (Region z. B. Frankfurt), Datenbank-Passwort notieren.
+2. **Authentication → Sign In / Providers**: „Allow new users to sign up“ **aus**. Den Provider **Email** eingeschaltet lassen (sonst gehen keine Magic Links).
+3. **Authentication → Emails → SMTP Settings**: Custom SMTP an, Host `smtp.resend.com`, Port `465`, User `resend`, Passwort = Resend-API-Key, Absender z. B. `noreply@mail.<domain>`.
+4. **Authentication → Emails → Templates → Magic Link**: Betreff `Dein Login-Link für die Kurseinteilung`, Inhalt aus [`supabase/templates/magic-link.html`](supabase/templates/magic-link.html) kopieren.
+5. **Authentication → URL Configuration**: Site URL `https://<domain>`, Redirect URL `https://<domain>/auth/confirm`.
+6. **Authentication → Rate Limits**: E-Mail-Limit auf z. B. 100 pro Stunde erhöhen.
+7. **Data API** in den Projekteinstellungen ausschalten (die App greift direkt auf Postgres zu; die Tabellen liegen ohnehin im nicht freigegebenen Schema `app`).
+8. Über **Connect** die Verbindungs-URLs holen:
+   - **Transaction pooler** (Port 6543) → `DATABASE_URL` in Vercel
+   - **Session pooler** (Port 5432) → nur für Migrationen
+9. Unter **Project Settings → API Keys** den Publishable Key und einen Secret Key kopieren.
+10. Migrationen einspielen:
+    ```bash
+    DATABASE_URL="<session-pooler-url>" pnpm db:migrate
+    ```
+
+### 4. Vercel
+
+1. Auf vercel.com **Add New → Project**, das GitHub-Repo importieren (Framework: Next.js).
+2. Environment Variables setzen (siehe [`.env.example`](.env.example)):
+   `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `RESEND_API_KEY`, `EMAIL_FROM` (z. B. `Kurseinteilung <noreply@mail.<domain>>`), `APP_URL` (`https://<domain>`), `ADMIN_EMAILS`, `CRON_SECRET` (beliebiger langer Zufallswert).
+3. Deployen. Jeder Push auf `main` deployt automatisch.
+4. **Settings → Domains**: `<domain>` hinzufügen und den angezeigten DNS-Eintrag in Cloudflare anlegen, mit Proxy-Status **DNS only** (graue Wolke).
+5. Der tägliche Cron-Job aus [`vercel.json`](vercel.json) ruft `/api/keepalive` auf. Vercel schickt `CRON_SECRET` automatisch mit.
+
+## Hinweise
+
+- **Supabase pausiert Gratis-Projekte nach 7 Tagen ohne Aktivität.** Der tägliche Keepalive-Cron verhindert das.
+- **Vercel Hobby ist nur für nicht-kommerzielle Nutzung erlaubt.** Ein ehrenamtliches Projekt für einen gemeinnützigen Verein, an dem niemand verdient, passt. Wird die Arbeit bezahlt, auf Vercel Pro wechseln oder auf Cloudflare Workers (OpenNext) umziehen; der Code funktioniert in beiden Fällen.
