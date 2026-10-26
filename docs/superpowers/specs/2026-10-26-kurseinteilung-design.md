@@ -62,7 +62,7 @@ a Backup can become a Trainer.
 | Email | Resend: SMTP for Supabase Auth mails, SDK for notifications |
 | UI | Tailwind CSS v4, shadcn/ui |
 | Validation | Zod |
-| Dates | date-fns + @date-fns/tz (Europe/Vienna) |
+| Dates | built-in `Intl.DateTimeFormat` with `timeZone: "Europe/Vienna"` |
 | Lint/format | Biome |
 | Hosting | Vercel (Hobby), GitHub repo `lucasra1/kurseinteilung-application` |
 | Domain | Cloudflare Registrar (name to be decided: `<domain>` below) |
@@ -98,19 +98,20 @@ Every read and write goes through a small server-only module (`import
   to `/login` or throw a forbidden error.
 - Every Server Action and every page that shows protected data starts with
   one of these guards.
-- Cached reads (`"use cache"`) never read cookies. They take plain
-  arguments and are called only after the guard has run.
-
 ### Caching (`cacheComponents`)
 
-- Layout and page chrome are prerendered as the static shell.
-- Everything that depends on the logged-in user (the user's own status, the
-  sign-up button, admin-only details) renders inside `<Suspense>`.
-- Shared data (Kurse, Termine, signups with names) is loaded by cached
-  functions tagged with `cacheTag("termine")`; the person list is tagged
-  `cacheTag("profiles")`.
-- Every mutation calls `updateTag(...)` for the tags it affects, so the next
-  render shows fresh data immediately.
+- `cacheComponents` is on. Layout and page chrome are prerendered as the
+  static shell.
+- Everything that reads the session, URL params, or the database renders
+  inside `<Suspense>` (a `loading.tsx` per route group), so it streams in
+  after the shell.
+- Signup data is **not** cached with `"use cache"`. On Vercel the default
+  cache is in-memory per serverless instance and tag invalidation is local
+  to one instance, so a person could sign up and then see stale data from
+  another instance. Reads are one cheap query, so they always hit the
+  database.
+- After a mutation, Server Actions call `refresh()` (from `next/cache`) so
+  the current page re-renders with fresh data.
 
 ### Concurrency: the "first N" rule
 
@@ -183,7 +184,7 @@ signups
   position    integer NOT NULL CHECK (position >= 1)
   created_at  timestamptz NOT NULL DEFAULT now()
   UNIQUE (termin_id, profile_id)
-  UNIQUE (termin_id, position) DEFERRABLE INITIALLY DEFERRED
+  INDEX (termin_id, position)
 
 app_settings      (exactly one row, id = 1)
   id            integer PK CHECK (id = 1)
@@ -192,12 +193,16 @@ app_settings      (exactly one row, id = 1)
 
 - Dates and times are wall-clock times in Europe/Vienna; no time zone is
   stored.
-- `position` is kept gap-free (1…n) by the app: removing a signup shifts all
-  later positions down by one inside the same transaction. The position
-  uniqueness constraint is deferred so these shifts and admin swaps don't
-  collide mid-transaction.
-- The initial `app_settings` row with a random invite token is created by a
-  seed step in the migrations.
+- Roles come from the **rank** in the list sorted by `position` (then
+  `created_at`), not from the raw `position` value, so a gap (e.g. after an
+  auth user is deleted in the Supabase dashboard) is harmless.
+- The app keeps positions tidy anyway: removing a signup shifts all later
+  positions down by one, and new signups get `max(position) + 1`. There is
+  no uniqueness constraint on `position` (Drizzle can't express a deferrable
+  one); the Termin row lock already serializes all changes to a Termin's
+  signups.
+- The `app_settings` row is created lazily by app code on first access
+  (`INSERT … ON CONFLICT DO NOTHING`), with a random invite token.
 
 ## Auth and registration
 
@@ -326,7 +331,11 @@ German.
 | An admin removes a person from a Termin, or deletes a Termin or Kurs they were on | that person | Kurs, Termin, "du wurdest ausgetragen" |
 
 - The person whose own action caused a change gets no email about it.
-- No emails for Termine in the past.
+- No emails for Termine in the past, and none to people whose account was
+  just removed.
+- Locally (no `RESEND_API_KEY` set), notification emails are written to the
+  server console instead of being sent. Auth emails always go through
+  Supabase (Mailpit locally).
 - Free quota: 100 emails/day, 3,000/month, which is ample.
 
 ## Error handling
@@ -356,7 +365,9 @@ German.
 
 - **Local**: `supabase start` (Docker) provides Postgres, Auth, and Mailpit
   (catches all emails locally). `supabase/config.toml` holds the local auth
-  settings: signup disabled, magic link template, site URL. Migrations are
+  settings: signup disabled (`[auth] enable_signup = false`; the email
+  provider itself stays enabled, otherwise magic links stop working), magic
+  link template, site URL. Migrations are
   applied with `drizzle-kit migrate`.
 - **Production**: one Supabase free project, one Vercel project linked to the
   GitHub repo (deploys on push to `main`). Auth settings, SMTP, and email
@@ -371,7 +382,7 @@ German.
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Session handling via `@supabase/ssr` |
 | `SUPABASE_SECRET_KEY` | Auth admin API (server only) |
-| `RESEND_API_KEY` | Notification emails |
+| `RESEND_API_KEY` | Notification emails (optional locally) |
 | `EMAIL_FROM` | e.g. `Kurseinteilung <noreply@<domain>>` |
 | `APP_URL` | Public base URL, used in email links |
 | `ADMIN_EMAILS` | Comma-separated bootstrap admin emails |
