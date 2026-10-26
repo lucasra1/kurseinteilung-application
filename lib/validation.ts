@@ -1,0 +1,70 @@
+import { z } from "zod";
+
+/** Optional text field: missing or blank becomes null. */
+const optionalText = z
+  .string()
+  .trim()
+  .optional()
+  .transform((value) => value || null);
+
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.email({ error: "Bitte gib eine gültige E-Mail-Adresse ein." }));
+
+export const uuidSchema = z.uuid({ error: "Ungültige ID." });
+
+const fullName = z
+  .string({ error: "Bitte gib deinen Namen ein." })
+  .trim()
+  .min(1, { error: "Bitte gib deinen Namen ein." });
+
+export const loginSchema = z.object({ email: emailSchema });
+
+export const inviteSchema = z.object({
+  token: z.string().min(1),
+  fullName,
+  email: emailSchema,
+  phone: optionalText,
+});
+
+export const profileSchema = z.object({
+  fullName,
+  phone: optionalText,
+});
+
+export const kursSchema = z.object({
+  title: z.string().trim().min(1, { error: "Bitte gib einen Titel ein." }),
+  description: z.string().trim().default(""),
+  trainersNeeded: z.coerce
+    .number()
+    .int()
+    .min(1, { error: "Es braucht mindestens einen Trainer pro Termin." }),
+  backupsNeeded: z.coerce
+    .number()
+    .int()
+    .min(0, { error: "Die Anzahl Backups darf nicht negativ sein." }),
+});
+
+const time = z
+  .string()
+  .regex(/^\d{2}:\d{2}(:\d{2})?$/, {
+    error: "Bitte gib eine gültige Uhrzeit ein.",
+  })
+  .transform((value) => value.slice(0, 5));
+
+export const terminSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
+      error: "Bitte gib ein gültiges Datum ein.",
+    }),
+    startTime: time,
+    endTime: time,
+    topic: z.string().trim().min(1, { error: "Bitte gib ein Thema ein." }),
+    location: optionalText,
+  })
+  .refine((t) => t.endTime > t.startTime, {
+    path: ["endTime"],
+    error: "Das Ende muss nach dem Beginn liegen.",
+  });

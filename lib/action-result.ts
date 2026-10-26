@@ -1,0 +1,41 @@
+import { refresh } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
+import { ZodError } from "zod";
+import { DomainError } from "@/lib/errors";
+
+export type ActionResult =
+  | { ok: true; message?: string }
+  | { ok: false; error: string }
+  | null;
+
+/**
+ * Runs a Server Action body: on success refreshes the current page and returns the
+ * message `fn` returned; expected errors become a German message for the form.
+ */
+export async function runAction(
+  fn: () => Promise<unknown>,
+): Promise<ActionResult> {
+  try {
+    const message = await fn();
+    refresh();
+    return {
+      ok: true,
+      message: typeof message === "string" ? message : undefined,
+    };
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof DomainError)
+      return { ok: false, error: error.message };
+    if (error instanceof ZodError) {
+      return {
+        ok: false,
+        error: error.issues[0]?.message ?? "Ungültige Eingabe.",
+      };
+    }
+    console.error(error);
+    return {
+      ok: false,
+      error: "Etwas ist schiefgelaufen. Bitte versuch es nochmal.",
+    };
+  }
+}
