@@ -18,22 +18,26 @@ function roleForRank(rank: number, s: Staffing): Role {
   return "ueberzaehlig";
 }
 
-/** Sorts signups by position (then createdAt) and derives each one's role from its 1-based rank. */
+/** Signup order: by position, then createdAt. */
+export function sortByPosition<T extends { position: number; createdAt: Date }>(
+  signups: T[],
+): T[] {
+  return [...signups].sort(
+    (a, b) =>
+      a.position - b.position || a.createdAt.getTime() - b.createdAt.getTime(),
+  );
+}
+
+/** Derives each signup's role from its 1-based rank in signup order. */
 export function rankSignups<T extends { position: number; createdAt: Date }>(
   signups: T[],
   s: Staffing,
 ): Array<T & { role: Role; rank: number }> {
-  return [...signups]
-    .sort(
-      (a, b) =>
-        a.position - b.position ||
-        a.createdAt.getTime() - b.createdAt.getTime(),
-    )
-    .map((signup, index) => ({
-      ...signup,
-      rank: index + 1,
-      role: roleForRank(index + 1, s),
-    }));
+  return sortByPosition(signups).map((signup, index) => ({
+    ...signup,
+    rank: index + 1,
+    role: roleForRank(index + 1, s),
+  }));
 }
 
 export type StaffingStatus = "voll" | "backup-fehlt" | "trainer-fehlt";

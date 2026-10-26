@@ -188,3 +188,15 @@ export async function getAdminKurs(
   if (!kurs) notFound();
   return kurs;
 }
+
+export async function getAdminTermin(id: string): Promise<{
+  kurs: KursView<AdminSignupView>;
+  termin: TerminView<AdminSignupView>;
+}> {
+  await requireAdmin();
+  if (!uuidSchema.safeParse(id).success) notFound();
+  const kursViews = await loadKursViews({ terminId: id });
+  const kurs = kursViews.find((k) => k.termine.length > 0);
+  if (!kurs) notFound();
+  return { kurs, termin: kurs.termine[0] };
+}
