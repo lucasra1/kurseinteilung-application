@@ -4,7 +4,7 @@ import type { LockedTermin } from "@/lib/dal/staffing-tx";
 import { formatDate, formatTerminWhen } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
-import { type EmailMessage, sendEmail } from "@/lib/email";
+import { type EmailMessage, sendEmails } from "@/lib/email";
 import { env } from "@/lib/env";
 import { ROLE_LABEL, type RoleChange } from "@/lib/staffing";
 
@@ -116,18 +116,7 @@ export async function sendStaffingNotifications(
       if (change.profileId !== ctx.actorId) messages.push(personEmail(change));
     }
 
-    await Promise.all(
-      messages.map(async (message) => {
-        try {
-          await sendEmail(message);
-        } catch (error) {
-          console.error(
-            `[email] Versand an ${message.to} fehlgeschlagen`,
-            error,
-          );
-        }
-      }),
-    );
+    await sendEmails(messages);
   } catch (error) {
     console.error("[email] Benachrichtigungen fehlgeschlagen", error);
   }
