@@ -576,7 +576,7 @@ describe("platzFreiMail", () => {
       subject: "Platz frei: Erste Hilfe Grundkurs, Sa., 07.11.2026",
       text:
         "Hallo Ben Maier,\n\n" +
-        "bei „Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00 ist ein Instruktor-Platz frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt den Platz.\n\n" +
+        "du bist Backup bei „Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00. Ein Instruktor-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "Kurseinteilung",
     });
@@ -592,7 +592,7 @@ describe("platzFreiMail", () => {
         appUrl: APP_URL,
       }).text,
     ).toContain(
-      "sind 2 Praxisanleiter-Plätze frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt einen davon.",
+      "09:00–17:00. 2 Praxisanleiter-Plätze sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.",
     );
   });
 });

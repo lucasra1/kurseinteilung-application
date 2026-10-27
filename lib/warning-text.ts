@@ -2,7 +2,13 @@
 // Aufruf (spec 3). Pure.
 import type { TerminSnapshot } from "@/lib/audit";
 import { qualifiedCount, terminText } from "@/lib/audit-text";
-import { isBackup, type Kind, placesLabel, type Role } from "@/lib/staffing";
+import {
+  isBackup,
+  KIND_LABEL,
+  type Kind,
+  placesLabel,
+  type Role,
+} from "@/lib/staffing";
 
 type WarnedTermin = Pick<
   TerminSnapshot,
@@ -62,6 +68,13 @@ export function warningText(warnings: Warning[]): string {
       return `Der Termin ${terminText(roles[0].termin)} ist festgeschrieben. ${sentences.join(" ")}`;
     })
     .join("\n");
+}
+
+/** "Ein Instruktor-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn." */
+export function placesFreedText(kind: Kind, places: number): string {
+  return places === 1
+    ? `Ein ${KIND_LABEL[kind].one}-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.`
+    : `${placesLabel(places, kind)} sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.`;
 }
 
 type ViewedTermin = WarnedTermin & {

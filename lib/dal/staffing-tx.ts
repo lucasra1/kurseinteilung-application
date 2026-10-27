@@ -13,8 +13,7 @@ import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import { ConfirmationRequired, DomainError } from "@/lib/errors";
 import {
-  type Gebraucht,
-  type PlatzFrei,
+  type PlaceMail,
   type StaffingChange,
   sendStaffingNotifications,
 } from "@/lib/notifications";
@@ -434,7 +433,7 @@ export async function mutateStaffing<T>(opts: {
   });
 
   // The rule never triggers on past Termine, and recipients are on the Termin afterwards.
-  const platzFrei: PlatzFrei[] = triggered(out.plans).flatMap(
+  const platzFrei: PlaceMail[] = triggered(out.plans).flatMap(
     ({ terminId, kind, trigger }) => {
       const termin = out.after.get(terminId);
       if (trigger.type !== "backups" || !termin) return [];
@@ -446,7 +445,7 @@ export async function mutateStaffing<T>(opts: {
     },
   );
 
-  const gebraucht: Gebraucht[] = out.aufrufe.flatMap(
+  const gebraucht: PlaceMail[] = out.aufrufe.flatMap(
     ({ terminId, recipients, ...aufruf }) => {
       const termin = out.after.get(terminId);
       return termin ? [{ termin, recipients, ...aufruf }] : [];

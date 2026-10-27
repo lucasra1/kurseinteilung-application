@@ -1,23 +1,32 @@
 import "server-only";
 import { eq, inArray, or } from "drizzle-orm";
-import type { Actor, AuditEntry, TerminState } from "@/lib/audit";
-import type { LockedTermin } from "@/lib/dal/staffing-tx";
+import type {
+  Actor,
+  AuditEntry,
+  StaffingTermin,
+  TerminState,
+} from "@/lib/audit";
 import { formatDate, formatTerminWhen, todayInVienna } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { type EmailMessage, sendEmails } from "@/lib/email";
 import { env } from "@/lib/env";
-import { adminMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
+import {
+  adminMail,
+  gebrauchtMail,
+  type MailText,
+  type PlaceMailInput,
+  platzFreiMail,
+  SIGNATURE,
+} from "@/lib/mail-text";
 import { type Kind, ROLE_LABEL, type RoleChange } from "@/lib/staffing";
 
 export type StaffingChange = RoleChange & {
-  termin: LockedTermin;
+  termin: StaffingTermin;
   person: { fullName: string; email: string };
 };
 
-const SIGNATURE = "\n\nKurseinteilung";
-
-function describe(termin: LockedTermin) {
+function describe(termin: StaffingTermin) {
   return {
     what: `„${termin.kursTitle} – ${termin.topic}“`,
     when: formatTerminWhen(termin),
@@ -52,21 +61,14 @@ function personEmail(change: StaffingChange): EmailMessage {
   };
 }
 
-/** Places of one role the action ausgeschrieben, and the backups to offer them to. */
-export type PlatzFrei = {
-  termin: LockedTermin;
+/**
+ * Places of one role and whom to write about them, without the actor: the backups
+ * ("Platz frei"), or without a backup the qualified not on the Termin ("Du wirst gebraucht").
+ */
+export type PlaceMail = {
+  termin: StaffingTermin;
   kind: Kind;
   places: number;
-  /** Without the actor. */
-  recipients: { fullName: string; email: string }[];
-};
-
-/** A role lacking places without a backup, and the qualified who get "Du wirst gebraucht". */
-export type Gebraucht = {
-  termin: LockedTermin;
-  kind: Kind;
-  places: number;
-  /** Qualified, on the Termin in no role, without the actor. */
   recipients: { fullName: string; email: string }[];
 };
 
@@ -79,32 +81,19 @@ export type StaffingOutcome = {
   after: TerminState[];
   /** Role changes of people who still have an account, on Termine that aren't past. */
   changes: StaffingChange[];
-  platzFrei: PlatzFrei[];
-  gebraucht: Gebraucht[];
+  platzFrei: PlaceMail[];
+  gebraucht: PlaceMail[];
 };
 
-/** "Platz frei" to the backups of every role whose places the action ausgeschrieben. */
-async function platzFreiEmails(outcome: StaffingOutcome) {
-  return outcome.platzFrei.flatMap(({ termin, kind, places, recipients }) =>
+/** One mail per recipient of each `PlaceMail`, worded by `text`. */
+function placeEmails(
+  list: PlaceMail[],
+  text: (input: PlaceMailInput) => MailText,
+): EmailMessage[] {
+  return list.flatMap(({ termin, kind, places, recipients }) =>
     recipients.map((person) => ({
       to: person.email,
-      ...platzFreiMail({
-        termin,
-        kind,
-        places,
-        name: person.fullName,
-        appUrl: env.APP_URL,
-      }),
-    })),
-  );
-}
-
-/** "Du wirst gebraucht" to the qualified for every role lacking places without a backup. */
-async function gebrauchtEmails(outcome: StaffingOutcome) {
-  return outcome.gebraucht.flatMap(({ termin, kind, places, recipients }) =>
-    recipients.map((person) => ({
-      to: person.email,
-      ...gebrauchtMail({
+      ...text({
         termin,
         kind,
         places,
@@ -158,8 +147,14 @@ type MailGroup = {
  * more urgent ones are out already (spec 4, Kontingent).
  */
 const MAIL_GROUPS: MailGroup[] = [
-  { name: "platz-frei", build: platzFreiEmails },
-  { name: "gebraucht", build: gebrauchtEmails },
+  {
+    name: "platz-frei",
+    build: async (outcome) => placeEmails(outcome.platzFrei, platzFreiMail),
+  },
+  {
+    name: "gebraucht",
+    build: async (outcome) => placeEmails(outcome.gebraucht, gebrauchtMail),
+  },
   { name: "betroffene", build: betroffeneEmails },
   { name: "admins", build: adminEmails },
 ];

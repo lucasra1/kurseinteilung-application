@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Kind, Role } from "@/lib/staffing";
-import { selfWithdrawWarning, warningText } from "@/lib/warning-text";
+import {
+  placesFreedText,
+  selfWithdrawWarning,
+  warningText,
+} from "@/lib/warning-text";
 
 const tag1 = {
   id: "t1",
@@ -9,6 +13,17 @@ const tag1 = {
   date: "2026-11-07",
   startTime: "09:00:00",
 };
+
+describe("placesFreedText", () => {
+  it("tells the backups that the first to take a place gets it", () => {
+    expect(placesFreedText("instruktor", 1)).toBe(
+      "Ein Instruktor-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.",
+    );
+    expect(placesFreedText("praxisanleiter", 2)).toBe(
+      "2 Praxisanleiter-Plätze sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.",
+    );
+  });
+});
 
 describe("warningText", () => {
   it("says how many places go to the backups and how many backups get a mail", () => {

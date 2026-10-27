@@ -125,7 +125,7 @@ Ersetzt die Tabelle *Emails* der Grund-Spec. Login- und Einladungs-Mails bleiben
 
 | Auslöser | Empfänger | Inhalt |
 |---|---|---|
-| Ausschreibung | Backups der Rolle | Betreff „Platz frei: <Kurs>, <Tag>“. „Bei „<Kurs> – <Thema>“ am <Datum, Zeit> ist ein <Rolle>-Platz frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt den Platz.“ + Link zum Termin |
+| Ausschreibung | Backups der Rolle | Betreff „Platz frei: <Kurs>, <Tag>“. „Du bist Backup bei „<Kurs> – <Thema>“ am <Datum, Zeit>. Ein <Rolle>-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.“ (derselbe Satz wie im Panel) + Link zum Termin |
 | Lücke ohne Backup | Qualifizierte, nicht auf dem Termin | Betreff „Du wirst gebraucht: <Kurs>, <Tag>“. „Bei … fehlt ein <Rolle>. Wenn du Zeit hast, trag dich ein.“ + Link |
 | Jemand anderes ändert die eigene Rolle | betroffene Person | wie bisher: „Eingetragen“, „Ausgetragen“, „Neue Rolle: alt → neu“ |
 | Jede Aktion, die die Besetzung ändert | alle Koordinator:innen | eine Mail pro Aktion, siehe unten |

@@ -17,10 +17,12 @@ import {
   needed,
   placesLabel,
 } from "@/lib/staffing";
+import { placesFreedText } from "@/lib/warning-text";
 
 export type MailText = { subject: string; text: string };
 
-const SIGNATURE = "\n\nKurseinteilung";
+/** Ends every staffing mail. */
+export const SIGNATURE = "\n\nKurseinteilung";
 
 /** One Termin of the action: its main entry, then the consequences, in the action's order. */
 type Block = {
@@ -201,36 +203,29 @@ export function adminMail(input: {
   };
 }
 
-/** "Platz frei" to one backup of the role whose places were just ausgeschrieben. */
-export function platzFreiMail(input: {
+/** A mail to one person (`name`) about `places` of one role of a Termin. */
+export type PlaceMailInput = {
   termin: TerminSnapshot & { id: string };
   kind: Kind;
   places: number;
   name: string;
   appUrl: string;
-}): MailText {
+};
+
+/** "Platz frei" to one backup of the role whose places were just ausgeschrieben. */
+export function platzFreiMail(input: PlaceMailInput): MailText {
   const { termin, kind, places } = input;
-  const freed =
-    places === 1
-      ? `ist ein ${KIND_LABEL[kind].one}-Platz frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt den Platz.`
-      : `sind ${placesLabel(places, kind)} frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt einen davon.`;
   return {
     subject: `Platz frei: ${termin.kursTitle}, ${formatDate(termin.date)}`,
     text:
       `Hallo ${input.name},\n\n` +
-      `bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)} ${freed}\n\n` +
+      `du bist Backup bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)}. ${placesFreedText(kind, places)}\n\n` +
       `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }
 
 /** "Du wirst gebraucht" to someone qualified who isn't on a Termin lacking places without a backup. */
-export function gebrauchtMail(input: {
-  termin: TerminSnapshot & { id: string };
-  kind: Kind;
-  places: number;
-  name: string;
-  appUrl: string;
-}): MailText {
+export function gebrauchtMail(input: PlaceMailInput): MailText {
   const { termin, kind, places } = input;
   const missing =
     places === 1

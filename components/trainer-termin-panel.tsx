@@ -21,12 +21,11 @@ import {
   kindOf,
   needed,
   nextRole,
-  placesLabel,
   type Qualifications,
   ROLE_LABEL,
 } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
-import { selfWithdrawWarning } from "@/lib/warning-text";
+import { placesFreedText, selfWithdrawWarning } from "@/lib/warning-text";
 
 type Viewer = Qualifications & { id: string };
 
@@ -115,15 +114,11 @@ function cta(
     };
   }
   if (mine) {
-    const ausgeschriebene = ausgeschrieben(termin, mine.kind);
     if (canClaimPlace(termin, mine.profileId)) {
       return {
         terminId,
         mode: "uebernehmen",
-        hint:
-          ausgeschriebene === 1
-            ? `Ein ${KIND_LABEL[mine.kind].one}-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.`
-            : `${placesLabel(ausgeschriebene, mine.kind)} sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.`,
+        hint: placesFreedText(mine.kind, ausgeschrieben(termin, mine.kind)),
       };
     }
     const many = KIND_LABEL[mine.kind].many;
