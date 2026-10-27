@@ -128,7 +128,7 @@ function cta(
         hasQualification(viewer, "instruktor") ||
         hasQualification(viewer, "praxisanleiter")
           ? "Dafür fehlt dir die passende Qualifikation."
-          : "Bei dir ist noch keine Qualifikation eingetragen. Melde dich bei einem Admin.",
+          : "Bei dir ist noch keine Qualifikation eingetragen. Melde dich bei einer Praxisanleiterkoordinator:in.",
     };
   }
   return {
