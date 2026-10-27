@@ -128,7 +128,11 @@ function cta(
     }
     const many = KIND_LABEL[mine.kind].many;
     if (isBackup(mine.role)) {
-      const hint = `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`;
+      const backup = `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many}`;
+      // On a festgeschriebenen Termin nobody moves up: a freed place is ausgeschrieben.
+      const hint = termin.festgeschrieben
+        ? `${backup}. Wird ein Platz frei, bekommst du eine E-Mail und kannst ihn übernehmen.`
+        : `${backup} und rückst nach, wenn jemand ausfällt.`;
       return { terminId, mode: "austragen", hint };
     }
     // Only a fixed place on a festgeschriebenen Termin triggers an Ausschreibung.
@@ -169,7 +173,9 @@ function optionHint(termin: TerminView, options: SignupOption[]): string {
   const { kind, primary } = options[0];
   const { one, many } = KIND_LABEL[kind];
   if (!primary) {
-    return `Alle ${many}-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt.`;
+    return termin.festgeschrieben
+      ? `Alle ${many}-Plätze sind vergeben. Als Backup bekommst du eine E-Mail, wenn ein Platz frei wird, und kannst ihn übernehmen.`
+      : `Alle ${many}-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt.`;
   }
   const free = termin.missing[kind];
   return free === 1
