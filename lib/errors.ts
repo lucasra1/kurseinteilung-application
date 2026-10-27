@@ -7,11 +7,11 @@ const MESSAGES = {
   "termin-vorbei": "Dieser Termin liegt in der Vergangenheit.",
   "nicht-gefunden": "Eintrag nicht gefunden.",
   "einladung-ungueltig":
-    "Dieser Einladungslink ist ungültig – bitte beim Admin melden.",
+    "Dieser Einladungslink ist ungültig. Melde dich bei einer Praxisanleiterkoordinator:in.",
   "letzter-admin":
-    "Der letzte Admin kann nicht entfernt oder herabgestuft werden.",
+    "Die letzte Praxisanleiterkoordinator:in kann nicht entfernt oder herabgestuft werden.",
   "admin-aus-env":
-    "Dieser Admin ist fix eingetragen und kann hier nicht geändert werden.",
+    "Diese Praxisanleiterkoordinator:in ist fix eingetragen und kann hier nicht geändert werden.",
   "selbst-entfernen": "Du kannst dich nicht selbst entfernen.",
   "zu-viele-anfragen":
     "Bitte warte einen Moment, bevor du einen neuen Login-Link anforderst.",

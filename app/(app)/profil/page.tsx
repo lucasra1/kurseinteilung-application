@@ -10,6 +10,7 @@ import {
   KINDS,
   type Qualifications,
 } from "@/lib/staffing";
+import { COORDINATOR } from "@/lib/wording";
 import { logout } from "../actions";
 import { ProfileForm } from "./profile-form";
 
@@ -37,9 +38,9 @@ async function Profile() {
             <span className="truncate text-base font-semibold">
               {user.fullName}
             </span>
-            <span className="truncate text-sm text-muted-foreground">
+            <span className="text-sm text-muted-foreground">
               {qualificationText(user)}
-              {user.isAdmin && " · Admin"}
+              {user.isAdmin && ` · ${COORDINATOR.one}`}
             </span>
           </div>
         </div>
@@ -50,7 +51,8 @@ async function Profile() {
         />
       </section>
       <p className="text-[13px] text-muted-foreground">
-        Deine Qualifikation ändern kann ein Admin unter Personen.
+        Deine Qualifikation ändern kann eine Praxisanleiterkoordinator:in unter
+        Personen.
       </p>
       <form action={logout}>
         <Button type="submit" variant="outline" className="w-full sm:w-auto">

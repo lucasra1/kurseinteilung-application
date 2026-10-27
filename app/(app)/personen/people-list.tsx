@@ -9,6 +9,7 @@ import { Avatar } from "@/components/termin-bits";
 import { Input } from "@/components/ui/input";
 import { KIND_LABEL, KINDS, type Kind } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
+import { COORDINATOR } from "@/lib/wording";
 import { deletePerson, toggleAdmin, toggleQualification } from "./actions";
 
 type Person = {
@@ -24,7 +25,7 @@ type Person = {
 };
 
 const COLUMNS =
-  "md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_8.5rem_14rem_5rem_3.5rem_2.75rem]";
+  "md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_8.5rem_14rem_5rem_4.5rem_2.75rem]";
 
 export function PeopleList({
   people,
@@ -65,7 +66,7 @@ export function PeopleList({
       <div
         aria-hidden="true"
         className={cn(
-          "hidden gap-4 border-b px-4 py-2.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase md:grid",
+          "hidden items-end gap-4 border-b px-4 py-2.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase md:grid",
           COLUMNS,
         )}
       >
@@ -74,8 +75,8 @@ export function PeopleList({
         <span>Telefon</span>
         <span>Qualifikation</span>
         <span>Termine</span>
-        <span>Admin</span>
-        <span />
+        {/* Spans the empty action column too; the soft hyphen lets it wrap. */}
+        <span className="col-span-2">Praxisanleiter&shy;koordinator:in</span>
       </div>
       {visible.length === 0 && (
         <p className="p-4 text-sm text-muted-foreground">Niemand gefunden.</p>
@@ -219,8 +220,10 @@ function SwitchButton({ person }: { person: Person }) {
       type="submit"
       role="switch"
       aria-checked={person.isAdmin}
-      aria-label={`Admin: ${person.fullName}`}
-      title={person.isEnvAdmin ? "Fix als Admin eingetragen" : undefined}
+      aria-label={`${COORDINATOR.one}: ${person.fullName}`}
+      title={
+        person.isEnvAdmin ? `Fix als ${COORDINATOR.one} eingetragen` : undefined
+      }
       disabled={pending || person.isEnvAdmin}
       className="group flex h-11 w-11 items-center outline-none disabled:opacity-50"
     >

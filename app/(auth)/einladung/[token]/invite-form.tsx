@@ -87,7 +87,8 @@ export function InviteForm({ token }: { token: string }) {
           onChange={(event) => set({ phone: event.target.value })}
         />
         <span id="phone-hint" className="text-[13px] text-muted-foreground">
-          Sehen nur Admins, falls kurzfristig etwas ist.
+          Sehen nur Praxisanleiterkoordinator:innen, falls kurzfristig etwas
+          ist.
         </span>
       </div>
       <fieldset className="flex flex-col gap-2">
