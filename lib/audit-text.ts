@@ -17,7 +17,7 @@ import {
   placesLabel,
   type Role,
 } from "@/lib/staffing";
-import { COORDINATOR } from "@/lib/wording";
+import { COORDINATOR, countOf } from "@/lib/wording";
 
 /** "Instruktor", "Backup Praxisanleiter" */
 function roleText(role: Role): string {
@@ -179,7 +179,7 @@ export function auditSentence(event: AuditEvent): string {
 
 /** "14 Qualifizierte", "1 qualifizierte Person" */
 export function qualifiedCount(n: number): string {
-  return n === 1 ? "1 qualifizierte Person" : `${n} Qualifizierte`;
+  return countOf(n, { one: "qualifizierte Person", many: "Qualifizierte" });
 }
 
 const EXCERPT_LENGTH = 50;

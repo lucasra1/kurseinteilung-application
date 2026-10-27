@@ -1,3 +1,5 @@
+import { countOf } from "@/lib/wording";
+
 /** The two qualifications; every signup is for one of them. */
 export type Kind = "instruktor" | "praxisanleiter";
 
@@ -174,7 +176,8 @@ export function staffingLabel(missing: Missing): string {
 
 /** "1 Instruktor-Platz", "2 Praxisanleiter-Plätze" */
 export function placesLabel(places: number, kind: Kind): string {
-  return `${places} ${KIND_LABEL[kind].one}-${places === 1 ? "Platz" : "Plätze"}`;
+  const { one } = KIND_LABEL[kind];
+  return countOf(places, { one: `${one}-Platz`, many: `${one}-Plätze` });
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -210,26 +213,6 @@ export type FestschreibungResult = {
   /** After lifting: selected Termine still festgeschrieben by date. */
   automatisch: number;
 };
-
-const termineCount = (n: number) => `${n} ${n === 1 ? "Termin" : "Termine"}`;
-
-/** The feedback after Festschreiben (`value` true) or Aufheben. */
-export function festschreibungMessage(
-  value: boolean,
-  { changed, automatisch }: FestschreibungResult,
-): string {
-  if (value) {
-    return changed === 0
-      ? "Die Auswahl war schon festgeschrieben."
-      : `${termineCount(changed)} festgeschrieben.`;
-  }
-  const lifted =
-    changed === 0
-      ? "In der Auswahl war nichts manuell festgeschrieben."
-      : `Festschreibung bei ${changed} ${changed === 1 ? "Termin" : "Terminen"} aufgehoben.`;
-  if (automatisch === 0) return lifted;
-  return `${lifted} ${termineCount(automatisch)} ${automatisch === 1 ? "bleibt" : "bleiben"} automatisch festgeschrieben (weniger als 3 Monate).`;
-}
 
 /** What a change does to one role of a Termin besides the roles themselves. */
 export type Trigger =

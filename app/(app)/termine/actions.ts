@@ -12,8 +12,8 @@ import {
   signUpSelf,
   withdrawSelf,
 } from "@/lib/dal/signups";
-import { festschreibungMessage } from "@/lib/staffing";
 import { bestaetigtSchema, kindSchema, uuidSchema } from "@/lib/validation";
+import { festschreibungMessage } from "@/lib/wording";
 
 const signupFormSchema = z.object({
   terminId: uuidSchema,
