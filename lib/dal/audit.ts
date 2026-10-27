@@ -64,17 +64,17 @@ const PAGE_SIZE = 50;
 const cursorOf = sql<string>`to_char(${auditEvents.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
 /**
- * About PAGE_SIZE entries, never splitting an action: all of its entries share one
- * `created_at` (the transaction's `now()`), and a page always ends between two timestamps.
- * Without a `scope`, all entries.
+ * About PAGE_SIZE entries matching `filter`, never splitting an action: all of its entries
+ * share one `created_at` (the transaction's `now()`), and a page always ends between two
+ * timestamps. Without a `filter`, all entries.
  */
 async function historyPage(
-  scope: SQL | undefined,
+  filter: SQL | undefined,
   cursor?: string,
 ): Promise<HistoryPage> {
   const where = cursor
-    ? and(scope, lt(auditEvents.createdAt, sql`${cursor}::timestamptz`))
-    : scope;
+    ? and(filter, lt(auditEvents.createdAt, sql`${cursor}::timestamptz`))
+    : filter;
   const select = () =>
     db
       .select({ row: auditEvents, cursor: cursorOf })
@@ -95,9 +95,9 @@ async function historyPage(
   // The last action on this page continues past PAGE_SIZE: take all of it.
   const atBoundary = sql`${boundary}::timestamptz`;
   const [rest, older] = await Promise.all([
-    select().where(and(scope, eq(auditEvents.createdAt, atBoundary))),
+    select().where(and(filter, eq(auditEvents.createdAt, atBoundary))),
     select()
-      .where(and(scope, lt(auditEvents.createdAt, atBoundary)))
+      .where(and(filter, lt(auditEvents.createdAt, atBoundary)))
       .limit(1),
   ]);
   return {
@@ -179,28 +179,22 @@ export async function getHistory(
   cursor?: string,
 ): Promise<HistoryView> {
   await requireAdmin();
-  if (source.scope === "all") {
-    const page = await historyPage(
-      source.bereich && inBereich(source.bereich),
-      cursor,
-    );
-    return {
-      groups: historyGroups(
-        page.events,
-        "all",
-        await existingSubjects(page.events),
-      ),
-      nextCursor: page.nextCursor,
-    };
-  }
-  if (!uuidSchema.safeParse(source.id).success)
-    return { groups: [], nextCursor: null };
-  const page = await historyPage(
-    SUBJECT_FILTER[source.scope](source.id),
-    cursor,
-  );
+  const page = await historyPage(filterOf(source), cursor);
+  // Only the Verlauf page links to what each group is about.
+  const existing =
+    source.scope === "all" ? await existingSubjects(page.events) : undefined;
   return {
-    groups: historyGroups(page.events, source.scope),
+    groups: historyGroups(page.events, source.scope, existing),
     nextCursor: page.nextCursor,
   };
+}
+
+/** The entries `source` names; undefined for all of them. */
+function filterOf(source: HistorySource): SQL | undefined {
+  if (source.scope === "all") {
+    return source.bereich && inBereich(source.bereich);
+  }
+  // A malformed id (from the URL) names nothing; Postgres would reject comparing it.
+  if (!uuidSchema.safeParse(source.id).success) return sql`false`;
+  return SUBJECT_FILTER[source.scope](source.id);
 }
