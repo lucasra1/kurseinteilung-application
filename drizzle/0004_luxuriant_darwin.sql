@@ -1,0 +1,3 @@
+ALTER TABLE "app"."termine" ADD COLUMN "instruktoren_ausgeschrieben" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."termine" ADD COLUMN "praxisanleiter_ausgeschrieben" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."termine" ADD CONSTRAINT "termine_ausgeschrieben_check" CHECK ("app"."termine"."instruktoren_ausgeschrieben" >= 0 and "app"."termine"."praxisanleiter_ausgeschrieben" >= 0);

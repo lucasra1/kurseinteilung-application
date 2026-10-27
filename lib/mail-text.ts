@@ -9,7 +9,14 @@ import type {
 } from "@/lib/audit";
 import { auditSentence } from "@/lib/audit-text";
 import { formatDate, formatTerminWhen } from "@/lib/dates";
-import { isBackup, KIND_LABEL, KINDS, needed } from "@/lib/staffing";
+import {
+  isBackup,
+  KIND_LABEL,
+  KINDS,
+  type Kind,
+  needed,
+  placesLabel,
+} from "@/lib/staffing";
 
 export type MailText = { subject: string; text: string };
 
@@ -100,7 +107,18 @@ function staffingSummary(state: TerminState): string {
  * differs (Ausschreibung, Aufruf) switch on `entry.type` here.
  */
 function consequenceLine(entry: AuditEntry, actor: Actor): string {
-  return `– ${auditSentence(asEvent(entry, actor))}.`;
+  switch (entry.type) {
+    case "place.ausgeschrieben": {
+      const { kind, places, angeschrieben } = entry.data;
+      const verb = places === 1 ? "ist" : "sind";
+      const held = `– Der Termin ist festgeschrieben: ${placesLabel(places, kind)} ${verb} ausgeschrieben.`;
+      if (angeschrieben.length === 0) return held;
+      const who = angeschrieben.length === 1 ? "Backup" : "Backups";
+      return `${held} Angeschrieben: ${angeschrieben.join(", ")} (${who}).`;
+    }
+    default:
+      return `– ${auditSentence(asEvent(entry, actor))}.`;
+  }
 }
 
 /** Names the kind of action; anything without its own subject is "Besetzung geändert". */
@@ -109,6 +127,8 @@ function subject(main: AuditEntry, termin: TerminSnapshot, actor: Actor) {
   switch (main.type) {
     case "signup.created":
       return `Eintragung: ${at}`;
+    case "signup.claimed":
+      return `Platz übernommen: ${at}`;
     case "signup.removed":
       return main.profileId === actor.id
         ? `Abmeldung: ${at}`
@@ -164,5 +184,27 @@ export function coordinatorMail(input: {
   return {
     subject: subject(first.main, first.termin, actor),
     text: text.join("\n\n") + SIGNATURE,
+  };
+}
+
+/** "Platz frei" to one backup of the role whose places were just ausgeschrieben. */
+export function platzFreiMail(input: {
+  termin: TerminSnapshot & { id: string };
+  kind: Kind;
+  places: number;
+  name: string;
+  appUrl: string;
+}): MailText {
+  const { termin, kind, places } = input;
+  const freed =
+    places === 1
+      ? `ist ein ${KIND_LABEL[kind].one}-Platz frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt den Platz.`
+      : `sind ${placesLabel(places, kind)} frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt einen davon.`;
+  return {
+    subject: `Platz frei: ${termin.kursTitle}, ${formatDate(termin.date)}`,
+    text:
+      `Hallo ${input.name},\n\n` +
+      `bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)} ${freed}\n\n` +
+      `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }

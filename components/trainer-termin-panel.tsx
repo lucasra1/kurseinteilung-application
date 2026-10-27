@@ -10,6 +10,8 @@ import { TerminPanel } from "@/components/termin-panel";
 import type { SignupView, TerminView } from "@/lib/dal/read-model";
 import { formatLongDate, formatTimeRange } from "@/lib/dates";
 import {
+  ausgeschrieben,
+  fixedPlaces,
   hasQualification,
   isBackup,
   KIND_LABEL,
@@ -18,6 +20,7 @@ import {
   kindOf,
   needed,
   nextRole,
+  placesLabel,
   type Qualifications,
   ROLE_LABEL,
 } from "@/lib/staffing";
@@ -110,9 +113,20 @@ function cta(
     };
   }
   if (mine) {
+    const held = ausgeschrieben(termin, mine.kind);
+    if (isBackup(mine.role) && held > 0) {
+      return {
+        terminId,
+        mode: "uebernehmen",
+        hint:
+          held === 1
+            ? `Ein ${KIND_LABEL[mine.kind].one}-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.`
+            : `${placesLabel(held, mine.kind)} sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.`,
+      };
+    }
     const many = KIND_LABEL[mine.kind].many;
     const hint = isBackup(mine.role)
-      ? `Du bist Backup ${mine.rank - needed(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`
+      ? `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`
       : `Du bist als ${KIND_LABEL[mine.kind].one} eingetragen.`;
     return { terminId, mode: "austragen", hint };
   }

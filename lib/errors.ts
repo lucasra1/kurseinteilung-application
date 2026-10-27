@@ -5,6 +5,8 @@ const MESSAGES = {
   "bereits-eingetragen": "Diese Person ist für den Termin bereits eingetragen.",
   "nicht-eingetragen": "Diese Person ist für den Termin nicht eingetragen.",
   "termin-vorbei": "Dieser Termin liegt in der Vergangenheit.",
+  "platz-vergeben": "Der Platz ist schon vergeben.",
+  "kein-backup": "Diese Person ist hier kein Backup.",
   "nicht-gefunden": "Eintrag nicht gefunden.",
   "einladung-ungueltig":
     "Dieser Einladungslink ist ungültig. Melde dich bei einer Praxisanleiterkoordinator:in.",

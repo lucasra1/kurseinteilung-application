@@ -5,15 +5,15 @@ import {
   KIND_LABEL,
   KINDS,
   type Missing,
+  type Needed,
   needed,
   ROLE_LABEL,
   type Role,
-  type Staffing,
   staffingLabel,
 } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
 
-type Counts = Staffing & {
+type Counts = Needed & {
   missing: Missing;
   isStaffed: boolean;
   signups: { role: Role }[];

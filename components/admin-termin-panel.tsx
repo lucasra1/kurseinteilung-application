@@ -56,12 +56,14 @@ export function AdminTerminPanel({
     .map((kind) => {
       const role = nextRole(termin.signups, termin, kind);
       const ofKind = termin.signups.filter((s) => s.kind === kind).length;
+      // An ausgeschriebener place goes to the newcomer, ahead of the backups.
+      const fixed = termin.signups.filter((s) => s.role === kind).length;
       return {
         kind,
         label: KIND_LABEL[kind].one,
         placement: isBackup(role)
           ? `als Backup ${ofKind + 1 - needed(termin, kind)} (${KIND_LABEL[kind].one})`
-          : `als ${KIND_LABEL[kind].one} auf Platz ${ofKind + 1}`,
+          : `als ${KIND_LABEL[kind].one} auf Platz ${fixed + 1}`,
         people: people
           .filter((p) => !signedUp.has(p.id) && hasQualification(p, kind))
           .map(({ id, fullName, upcomingSignups }) => ({

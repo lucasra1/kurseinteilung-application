@@ -18,18 +18,38 @@ export const ROLE_LABEL: Record<Role, string> = {
   "backup-praxisanleiter": "Backup (Praxisanleiter)",
 };
 
+/** Places needed per kind, and how many of them are ausgeschrieben (held for the backups). */
 export type Staffing = {
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
+  instruktorenAusgeschrieben: number;
+  praxisanleiterAusgeschrieben: number;
 };
+
+/** Just the places needed, for what doesn't depend on held places. */
+export type Needed = Pick<
+  Staffing,
+  "instruktorenNeeded" | "praxisanleiterNeeded"
+>;
 
 export type Qualifications = {
   isInstruktor: boolean;
   isPraxisanleiter: boolean;
 };
 
-export function needed(s: Staffing, kind: Kind): number {
+export function needed(s: Needed, kind: Kind): number {
   return kind === "instruktor" ? s.instruktorenNeeded : s.praxisanleiterNeeded;
+}
+
+export function ausgeschrieben(s: Staffing, kind: Kind): number {
+  return kind === "instruktor"
+    ? s.instruktorenAusgeschrieben
+    : s.praxisanleiterAusgeschrieben;
+}
+
+/** How many signups of a kind hold a fixed place at most: the places not ausgeschrieben. */
+export function fixedPlaces(s: Staffing, kind: Kind): number {
+  return Math.max(0, needed(s, kind) - ausgeschrieben(s, kind));
 }
 
 export function hasQualification(q: Qualifications, kind: Kind): boolean {
@@ -57,8 +77,9 @@ export function sortByPosition<T extends { position: number; createdAt: Date }>(
 }
 
 /**
- * Derives roles: within each kind, the first N in signup order hold the fixed places,
- * everyone after them is a backup for that kind. `rank` is 1-based within the kind.
+ * Derives roles: within each kind, the first N − A in signup order hold the fixed places
+ * (N needed, A ausgeschrieben), everyone after them is a backup for that kind. `rank` is
+ * 1-based within the kind.
  */
 export function rankSignups<
   T extends { position: number; createdAt: Date; kind: Kind },
@@ -67,15 +88,20 @@ export function rankSignups<
   return sortByPosition(signups).map((signup) => {
     const rank = ++seen[signup.kind];
     const role: Role =
-      rank <= needed(s, signup.kind) ? signup.kind : `backup-${signup.kind}`;
+      rank <= fixedPlaces(s, signup.kind)
+        ? signup.kind
+        : `backup-${signup.kind}`;
     return { ...signup, rank, role };
   });
 }
 
-/** The role the next person signing up for `kind` gets. */
+/**
+ * The role the next person signing up for `kind` gets, given ranked `signups`: a fixed
+ * place while one is free, ausgeschriebene ones included.
+ */
 export function nextRole(
   signups: { role: Role }[],
-  s: Staffing,
+  s: Needed,
   kind: Kind,
 ): Role {
   const taken = signups.filter((signup) => signup.role === kind).length;
@@ -85,7 +111,8 @@ export function nextRole(
 /** Free fixed places per kind. */
 export type Missing = Record<Kind, number>;
 
-export function missingPlaces(signups: { role: Role }[], s: Staffing): Missing {
+/** Per kind `needed − fixed`, given ranked `signups`: ausgeschriebene places are missing. */
+export function missingPlaces(signups: { role: Role }[], s: Needed): Missing {
   const free = (kind: Kind) =>
     Math.max(
       needed(s, kind) - signups.filter((x) => x.role === kind).length,
@@ -109,6 +136,11 @@ export function staffingLabel(missing: Missing): string {
       ? "fehlt"
       : "fehlen";
   return `${parts.join(", ")} ${verb}`;
+}
+
+/** "1 Instruktor-Platz", "2 Praxisanleiter-Plätze" */
+export function placesLabel(places: number, kind: Kind): string {
+  return `${places} ${KIND_LABEL[kind].one}-${places === 1 ? "Platz" : "Plätze"}`;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -163,6 +195,153 @@ export function festschreibungMessage(
       : `Festschreibung bei ${changed} ${changed === 1 ? "Termin" : "Terminen"} aufgehoben.`;
   if (automatisch === 0) return lifted;
   return `${lifted} ${termineCount(automatisch)} ${automatisch === 1 ? "bleibt" : "bleiben"} automatisch festgeschrieben (weniger als 3 Monate).`;
+}
+
+/** What a change does to one role of a Termin besides the roles themselves. */
+export type Trigger =
+  | { type: "none" }
+  /**
+   * `places` newly ausgeschrieben; `recipients` are the role's backups (profile ids, in
+   * backup order) without the actor: they get "Platz frei".
+   */
+  | { type: "backups"; places: number; recipients: string[] }
+  /** No backup for the role: `places` more fixed places are missing than before. */
+  | { type: "aufruf"; places: number };
+
+export type RolePlan = {
+  /** The counter of ausgeschriebene places after the change. */
+  ausgeschrieben: number;
+  trigger: Trigger;
+};
+
+/** One Termin's result of `planAusschreibung`. */
+export type AusschreibungPlan = {
+  terminId: string;
+  roles: Record<Kind, RolePlan>;
+};
+
+type PlanSignup = {
+  profileId: string;
+  kind: Kind;
+  position: number;
+  createdAt: Date;
+};
+
+/** A Termin's numbers, counters and signups at one point of a change. */
+type PlanSide = { staffing: Staffing; signups: PlanSignup[] };
+
+export type AusschreibungInput = {
+  terminId: string;
+  /** As locked before the change. */
+  before: PlanSide;
+  /** After the change ran, with the counters as it left them (claiming lowers them). */
+  after: PlanSide;
+  /** After the change (`isFestgeschrieben`). */
+  festgeschrieben: boolean;
+  isPast: boolean;
+  /**
+   * People the change put on a fixed place on purpose (Platz übernehmen, Platz geben, ↑/↓):
+   * they never count as moving up.
+   */
+  explicit: ReadonlySet<string>;
+  /** Never a recipient. */
+  actorId: string;
+};
+
+function withAusgeschrieben(s: Staffing, kind: Kind, count: number): Staffing {
+  return kind === "instruktor"
+    ? { ...s, instruktorenAusgeschrieben: count }
+    : { ...s, praxisanleiterAusgeschrieben: count };
+}
+
+function planRole(
+  kind: Kind,
+  input: AusschreibungInput,
+  rankedBefore: Array<PlanSignup & { role: Role }>,
+): RolePlan {
+  const { before, after } = input;
+  const backup: Role = `backup-${kind}`;
+  // 1. A lower number takes ausgeschriebene places away first, fixed ones only after.
+  const cut = Math.max(
+    0,
+    needed(before.staffing, kind) - needed(after.staffing, kind),
+  );
+  let count = Math.max(0, ausgeschrieben(after.staffing, kind) - cut);
+  const none: Trigger = { type: "none" };
+  // 2. Past: the counter stays, so the staffing reads right in hindsight.
+  if (input.isPast) return { ausgeschrieben: count, trigger: none };
+  // 3. Not binding: backups move up as they always did.
+  if (!input.festgeschrieben) return { ausgeschrieben: 0, trigger: none };
+  const counted = count;
+
+  // 4. Backups who would move up stay backups: their places are held instead.
+  const wasBackup = new Set(
+    rankedBefore.filter((s) => s.role === backup).map((s) => s.profileId),
+  );
+  const rankWith = (n: number) =>
+    rankSignups(after.signups, withAusgeschrieben(after.staffing, kind, n));
+  count += rankWith(count).filter(
+    (s) =>
+      s.role === kind &&
+      wasBackup.has(s.profileId) &&
+      !input.explicit.has(s.profileId),
+  ).length;
+  const rankedAfter = rankWith(count);
+
+  // 5. More fixed places missing than before: offer them to the backups, else call out.
+  const more =
+    missingPlaces(rankedAfter, after.staffing)[kind] -
+    missingPlaces(rankedBefore, before.staffing)[kind];
+  if (more <= 0) return { ausgeschrieben: count, trigger: none };
+  const backups = rankedAfter.filter((s) => s.role === backup);
+  if (backups.length === 0) {
+    return { ausgeschrieben: count, trigger: { type: "aufruf", places: more } };
+  }
+  return {
+    ausgeschrieben: count,
+    trigger: {
+      type: "backups",
+      places: count - counted,
+      recipients: backups
+        .map((s) => s.profileId)
+        .filter((id) => id !== input.actorId),
+    },
+  };
+}
+
+/**
+ * The Ausschreibung rule (spec 3): per role the counter of ausgeschriebene places after a
+ * change and what it triggers. Pure, so a confirmation can ask before anything is written.
+ */
+export function planAusschreibung(
+  input: AusschreibungInput,
+): AusschreibungPlan {
+  const rankedBefore = rankSignups(input.before.signups, input.before.staffing);
+  return {
+    terminId: input.terminId,
+    roles: {
+      instruktor: planRole("instruktor", input, rankedBefore),
+      praxisanleiter: planRole("praxisanleiter", input, rankedBefore),
+    },
+  };
+}
+
+export type Triggered = {
+  terminId: string;
+  kind: Kind;
+  trigger: Exclude<Trigger, { type: "none" }>;
+};
+
+/** The roles where a change triggers an Ausschreibung or an Aufruf, Termin by Termin. */
+export function triggered(plans: AusschreibungPlan[]): Triggered[] {
+  return plans.flatMap((plan) =>
+    KINDS.flatMap((kind) => {
+      const { trigger } = plan.roles[kind];
+      return trigger.type === "none"
+        ? []
+        : [{ terminId: plan.terminId, kind, trigger }];
+    }),
+  );
 }
 
 /** terminId → profileId → role */

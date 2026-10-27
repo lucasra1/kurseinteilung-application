@@ -13,6 +13,8 @@ export type SignupOption = { kind: Kind; label: string; primary: boolean };
 export type SignupCtaProps = { terminId: string; hint?: string } & (
   | { mode: "eintragen"; options: SignupOption[] }
   | { mode: "austragen" }
+  /** A backup of a role with an ausgeschriebenen place: take it, or still withdraw. */
+  | { mode: "uebernehmen" }
   | { mode: "disabled"; label: string }
 );
 
@@ -45,7 +47,20 @@ export function SignupCta(props: SignupCtaProps) {
           ))}
         </form>
       )}
-      {props.mode === "austragen" && (
+      {props.mode === "uebernehmen" && (
+        <form action={formAction}>
+          <input type="hidden" name="terminId" value={props.terminId} />
+          <input type="hidden" name="intent" value="uebernehmen" />
+          <SubmitButton
+            size="lg"
+            className="w-full"
+            pendingText="Wird übernommen…"
+          >
+            Platz übernehmen
+          </SubmitButton>
+        </form>
+      )}
+      {(props.mode === "austragen" || props.mode === "uebernehmen") && (
         <ConfirmDialog
           triggerLabel="Austragen"
           triggerSize="default"
