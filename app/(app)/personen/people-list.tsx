@@ -1,6 +1,7 @@
 "use client";
 
 import { Search, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -91,10 +92,17 @@ export function PeopleList({
             )}
           >
             <span className="flex min-w-0 items-center gap-2.5">
-              <Avatar name={person.fullName} className="size-8 text-[11px]" />
-              <span className="truncate text-sm font-medium">
-                {person.fullName}
-              </span>
+              <Link
+                href={`/personen?person=${person.id}`}
+                scroll={false}
+                className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-lg outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <Avatar name={person.fullName} className="size-8 text-[11px]" />
+                <span className="truncate text-sm font-medium">
+                  {person.fullName}
+                  <span className="sr-only">: Verlauf anzeigen</span>
+                </span>
+              </Link>
               {person.id === currentUserId && (
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
                   Du

@@ -40,13 +40,16 @@ async function sendMagicLink(email: string): Promise<void> {
 export async function sendLoginLink(email: string): Promise<void> {
   if (!(await hasProfile(email))) {
     if (!isEnvAdmin(email)) return;
-    await createAccount({
-      email,
-      fullName: email.split("@")[0],
-      phone: null,
-      isInstruktor: false,
-      isPraxisanleiter: false,
-    });
+    await createAccount(
+      {
+        email,
+        fullName: email.split("@")[0],
+        phone: null,
+        isInstruktor: false,
+        isPraxisanleiter: false,
+      },
+      "admin-emails",
+    );
   }
   await sendMagicLink(email);
 }
@@ -62,6 +65,8 @@ export async function registerViaInvite(
   if (!(await isValidInviteToken(token))) {
     throw new DomainError("einladung-ungueltig");
   }
-  if (!(await hasProfile(input.email))) await createAccount(input);
+  if (!(await hasProfile(input.email))) {
+    await createAccount(input, "einladung");
+  }
   await sendMagicLink(input.email);
 }

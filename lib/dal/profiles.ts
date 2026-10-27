@@ -2,6 +2,12 @@ import "server-only";
 import { and, asc, eq, gte, inArray, ne, or, sql } from "drizzle-orm";
 import { authUsers } from "drizzle-orm/supabase";
 import { connection } from "next/server";
+import {
+  type AuditData,
+  type PersonFields,
+  personUpdatedEvents,
+} from "@/lib/audit";
+import { logEvents } from "@/lib/dal/audit";
 import { isEnvAdmin, requireAdmin, requireUser } from "@/lib/dal/auth";
 import { mutateStaffing, removeSignup } from "@/lib/dal/staffing-tx";
 import { todayInVienna } from "@/lib/dates";
@@ -22,6 +28,7 @@ export async function createAccount(
     fullName: string;
     phone: string | null;
   } & Qualifications,
+  via: AuditData["person.registered"]["via"],
 ): Promise<string> {
   const [existing] = await db
     .select({ id: authUsers.id })
@@ -38,29 +45,51 @@ export async function createAccount(
     userId = data.user.id;
   }
 
-  await db
-    .insert(profiles)
-    .values({
-      id: userId,
-      fullName: input.fullName,
-      email: input.email,
-      phone: input.phone,
-      isInstruktor: input.isInstruktor,
-      isPraxisanleiter: input.isPraxisanleiter,
-    })
-    .onConflictDoNothing();
-  return userId;
+  const id = userId; // a const stays narrowed to string inside the callback
+  await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(profiles)
+      .values({
+        id,
+        fullName: input.fullName,
+        email: input.email,
+        phone: input.phone,
+        isInstruktor: input.isInstruktor,
+        isPraxisanleiter: input.isPraxisanleiter,
+      })
+      .onConflictDoNothing()
+      .returning({ id: profiles.id });
+    if (!created) return;
+    const { fullName, isInstruktor, isPraxisanleiter } = input;
+    await logEvents(tx, { id, fullName }, [
+      {
+        type: "person.registered",
+        profileId: id,
+        data: { personName: fullName, via, isInstruktor, isPraxisanleiter },
+      },
+    ]);
+  });
+  return id;
 }
 
-export async function updateOwnProfile(input: {
-  fullName: string;
-  phone: string | null;
-}): Promise<void> {
+/** Name and phone of the current user; unchanged, it writes nothing. */
+export async function updateOwnProfile(input: PersonFields): Promise<void> {
   const user = await requireUser();
-  await db
-    .update(profiles)
-    .set({ fullName: input.fullName, phone: input.phone })
-    .where(eq(profiles.id, user.id));
+  await db.transaction(async (tx) => {
+    const [was] = await tx
+      .select({ fullName: profiles.fullName, phone: profiles.phone })
+      .from(profiles)
+      .where(eq(profiles.id, user.id))
+      .for("update");
+    if (!was) throw new DomainError("nicht-gefunden");
+    const entries = personUpdatedEvents(user.id, was, input);
+    if (entries.length === 0) return;
+    await tx
+      .update(profiles)
+      .set({ fullName: input.fullName, phone: input.phone })
+      .where(eq(profiles.id, user.id));
+    await logEvents(tx, user, entries);
+  });
 }
 
 export type PersonView = Qualifications & {
@@ -110,13 +139,15 @@ async function findProfile(profileId: string) {
   return profile;
 }
 
+/** Unchanged, it writes nothing. */
 export async function setAdmin(
   profileId: string,
   isAdmin: boolean,
 ): Promise<void> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const target = await findProfile(profileId);
   if (isEnvAdmin(target.email)) throw new DomainError("admin-aus-env");
+  if (target.isAdmin === isAdmin) return;
 
   if (!isAdmin) {
     const isAnyAdmin =
@@ -133,25 +164,56 @@ export async function setAdmin(
     if (others.length === 0) throw new DomainError("letzter-admin");
   }
 
-  await db.update(profiles).set({ isAdmin }).where(eq(profiles.id, profileId));
+  await db.transaction(async (tx) => {
+    // Only a real change counts: someone else may have just set the same value.
+    const [changed] = await tx
+      .update(profiles)
+      .set({ isAdmin })
+      .where(and(eq(profiles.id, profileId), ne(profiles.isAdmin, isAdmin)))
+      .returning({ fullName: profiles.fullName });
+    if (!changed) return;
+    await logEvents(tx, admin, [
+      {
+        type: "person.koordination_changed",
+        profileId,
+        data: { personName: changed.fullName, granted: isAdmin },
+      },
+    ]);
+  });
 }
 
-/** Existing signups stay as they are; the admin decides about them separately. */
+/**
+ * Existing signups stay as they are; the admin decides about them separately. Unchanged,
+ * it writes nothing.
+ */
 export async function setQualification(
   profileId: string,
   kind: Kind,
   value: boolean,
 ): Promise<void> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   await findProfile(profileId);
-  await db
-    .update(profiles)
-    .set(
-      kind === "instruktor"
-        ? { isInstruktor: value }
-        : { isPraxisanleiter: value },
-    )
-    .where(eq(profiles.id, profileId));
+  const column =
+    kind === "instruktor" ? profiles.isInstruktor : profiles.isPraxisanleiter;
+  await db.transaction(async (tx) => {
+    const [changed] = await tx
+      .update(profiles)
+      .set(
+        kind === "instruktor"
+          ? { isInstruktor: value }
+          : { isPraxisanleiter: value },
+      )
+      .where(and(eq(profiles.id, profileId), ne(column, value)))
+      .returning({ fullName: profiles.fullName });
+    if (!changed) return;
+    await logEvents(tx, admin, [
+      {
+        type: "person.qualification_changed",
+        profileId,
+        data: { personName: changed.fullName, kind, granted: value },
+      },
+    ]);
+  });
 }
 
 /** Removes the person from all Termine (others move up and get notified), then deletes the account. */

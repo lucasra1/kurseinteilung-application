@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  kursCreatedEvents,
+  kursUpdatedEvents,
+  personUpdatedEvents,
   type StaffingTermin,
   staffingEvents,
   type TerminSnapshot,
@@ -362,5 +365,183 @@ describe("staffingEvents", () => {
         },
       },
     ]);
+  });
+});
+
+describe("termin.updated", () => {
+  const action = {
+    type: "termin.updated",
+    actor: LEA,
+    target: { terminId: "t1" },
+  } as const;
+
+  it("writes nothing when saving without an actual change", () => {
+    const same = state(T1, [signup(ANNA, "instruktor", 1, "instruktor")]);
+    expect(staffingEvents({ action, before: [same], after: [same] })).toEqual(
+      [],
+    );
+  });
+
+  it("records old → new for every changed field, numbers included", () => {
+    const changed: StaffingTermin = {
+      ...T1,
+      date: "2026-11-08",
+      startTime: "10:00:00",
+      endTime: "18:00:00",
+      topic: "Tag 2",
+      location: null,
+      instruktorenNeeded: 2,
+      praxisanleiterNeeded: 0,
+    };
+    const [entry] = staffingEvents({
+      action,
+      before: [state(T1, [])],
+      after: [state(changed, [])],
+    });
+    expect(entry.data).toEqual({
+      termin: {
+        ...T1_SNAPSHOT,
+        date: "2026-11-08",
+        startTime: "10:00:00",
+        endTime: "18:00:00",
+        topic: "Tag 2",
+      },
+      changes: {
+        date: ["2026-11-07", "2026-11-08"],
+        startTime: ["09:00:00", "10:00:00"],
+        endTime: ["17:00:00", "18:00:00"],
+        topic: ["Tag 1", "Tag 2"],
+        location: ["Halle 2", null],
+        instruktorenNeeded: [1, 2],
+        praxisanleiterNeeded: [1, 0],
+      },
+    });
+  });
+});
+
+describe("kursCreatedEvents", () => {
+  it("writes the Kurs and each Termin created with it", () => {
+    const row = (id: string, topic: string, date: string) => ({
+      id,
+      kursId: "k1",
+      topic,
+      date,
+      startTime: "09:00:00",
+      endTime: "17:00:00",
+      location: "Halle 2",
+      instruktorenNeeded: 1,
+      praxisanleiterNeeded: 1,
+      createdAt: new Date(),
+    });
+    expect(
+      kursCreatedEvents({ id: "k1", title: "Erste Hilfe Grundkurs" }, [
+        row("t1", "Tag 1", "2026-11-07"),
+        row("t2", "Tag 2", "2026-11-08"),
+      ]),
+    ).toEqual([
+      {
+        type: "kurs.created",
+        terminId: null,
+        kursId: "k1",
+        profileId: null,
+        data: { kursTitle: "Erste Hilfe Grundkurs" },
+      },
+      {
+        type: "termin.created",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: null,
+        data: { termin: T1_SNAPSHOT },
+      },
+      {
+        type: "termin.created",
+        terminId: "t2",
+        kursId: "k1",
+        profileId: null,
+        data: {
+          termin: { ...T1_SNAPSHOT, topic: "Tag 2", date: "2026-11-08" },
+        },
+      },
+    ]);
+  });
+});
+
+describe("kursUpdatedEvents", () => {
+  const was = { title: "Erste Hilfe", description: "" };
+
+  it("records old → new for each changed field, under the new title", () => {
+    expect(
+      kursUpdatedEvents("k1", was, {
+        title: "Erste Hilfe Grundkurs",
+        description: "",
+      }),
+    ).toEqual([
+      {
+        type: "kurs.updated",
+        terminId: null,
+        kursId: "k1",
+        profileId: null,
+        data: {
+          kursTitle: "Erste Hilfe Grundkurs",
+          changes: { title: ["Erste Hilfe", "Erste Hilfe Grundkurs"] },
+        },
+      },
+    ]);
+    expect(
+      kursUpdatedEvents("k1", was, { ...was, description: "Für alle" })[0]
+        ?.data,
+    ).toEqual({
+      kursTitle: "Erste Hilfe",
+      changes: { description: ["", "Für alle"] },
+    });
+  });
+
+  it("writes nothing when saving without an actual change", () => {
+    expect(kursUpdatedEvents("k1", was, { ...was })).toEqual([]);
+  });
+});
+
+describe("personUpdatedEvents", () => {
+  const was = { fullName: "Anna Huber", phone: "0664 1234567" };
+
+  it("records the name old → new and only that the phone changed", () => {
+    const events = personUpdatedEvents(ANNA.id, was, {
+      fullName: "Anna Maier",
+      phone: "0676 7654321",
+    });
+    expect(events).toEqual([
+      {
+        type: "person.updated",
+        terminId: null,
+        kursId: null,
+        profileId: ANNA.id,
+        data: {
+          personName: "Anna Maier",
+          changes: { fullName: ["Anna Huber", "Anna Maier"], phone: true },
+        },
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(/0664|0676/);
+  });
+
+  it("counts adding or removing the phone as a change", () => {
+    const changes = (phone: string | null, next: string | null) =>
+      personUpdatedEvents(
+        ANNA.id,
+        { fullName: "Anna Huber", phone },
+        { fullName: "Anna Huber", phone: next },
+      )[0]?.data;
+    expect(changes(null, "0664 1234567")).toEqual({
+      personName: "Anna Huber",
+      changes: { phone: true },
+    });
+    expect(changes("0664 1234567", null)).toEqual({
+      personName: "Anna Huber",
+      changes: { phone: true },
+    });
+  });
+
+  it("writes nothing when saving without an actual change", () => {
+    expect(personUpdatedEvents(ANNA.id, was, { ...was })).toEqual([]);
   });
 });
