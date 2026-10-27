@@ -87,7 +87,8 @@ export async function TrainerView({
         {visible.length === 0 &&
           (termine.length === 0 ? (
             <EmptyState icon={CalendarDays} title="Noch keine Termine">
-              Sobald ein Admin Termine anlegt, siehst du sie hier.
+              Sobald eine Praxisanleiterkoordinator:in Termine anlegt, siehst du
+              sie hier.
             </EmptyState>
           ) : (
             <EmptyState

@@ -52,7 +52,7 @@ export function SignupCta(props: SignupCtaProps) {
           triggerClassName="w-full"
           destructive={false}
           title="Wirklich austragen?"
-          description="Wer nach dir eingetragen ist, rückt nach. Die Admins bekommen eine E-Mail."
+          description="Wer nach dir eingetragen ist, rückt nach. Die Praxisanleiterkoordinator:innen bekommen eine E-Mail."
           confirmLabel="Austragen"
           action={changeSignup}
           fields={{ terminId: props.terminId, intent: "abmelden" }}

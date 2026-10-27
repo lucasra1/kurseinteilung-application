@@ -20,7 +20,8 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
         <LoginForm />
       </section>
       <p className="text-center text-sm text-muted-foreground">
-        Noch nicht registriert? Frag deinen Admin nach dem Einladungslink.
+        Noch nicht registriert? Frag eine Praxisanleiterkoordinator:in nach dem
+        Einladungslink.
       </p>
     </>
   );

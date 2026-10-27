@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/dal/auth";
 import { listPeople } from "@/lib/dal/profiles";
 import { getInviteToken } from "@/lib/dal/settings";
 import { env } from "@/lib/env";
+import { COORDINATOR, countOf } from "@/lib/wording";
 import { newInviteLink } from "./actions";
 import { CopyButton } from "./copy-button";
 import { PeopleList } from "./people-list";
@@ -34,8 +35,8 @@ async function Personen() {
           Personen
         </h1>
         <p className="mt-1 text-[15px] text-muted-foreground">
-          {people.length} {people.length === 1 ? "Person" : "Personen"} ·{" "}
-          {adminCount} {adminCount === 1 ? "Admin" : "Admins"}
+          {countOf(people.length, { one: "Person", many: "Personen" })} ·{" "}
+          {countOf(adminCount, COORDINATOR)}
         </p>
       </div>
 
