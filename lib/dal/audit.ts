@@ -5,6 +5,8 @@ import {
   eq,
   exists,
   inArray,
+  isNotNull,
+  isNull,
   lt,
   or,
   type SQL,
@@ -118,22 +120,27 @@ const SUBJECT_FILTER: Record<SubjectKind, (id: string) => SQL> = {
     or(eq(auditEvents.profileId, id), eq(auditEvents.actorId, id)) as SQL,
 };
 
-const part = alias(auditEvents, "part");
+/** An entry of the same part of an action as the one being filtered. */
+const sibling = alias(auditEvents, "sibling");
 
 /**
  * Whole parts of actions (an action's entries on one Termin, or those on none) with an
  * entry of the Bereich, so a filtered group keeps its main entry and its consequences.
  */
 function inBereich(bereich: Bereich): SQL {
+  const { withoutTermin, onTermin } = bereichTypes(bereich);
   return exists(
     db
       .select({ one: sql`1` })
-      .from(part)
+      .from(sibling)
       .where(
         and(
-          eq(part.actionId, auditEvents.actionId),
-          sql`${part.terminId} is not distinct from ${auditEvents.terminId}`,
-          inArray(part.type, bereichTypes(bereich)),
+          eq(sibling.actionId, auditEvents.actionId),
+          sql`${sibling.terminId} is not distinct from ${auditEvents.terminId}`,
+          or(
+            and(isNull(sibling.terminId), inArray(sibling.type, withoutTermin)),
+            and(isNotNull(sibling.terminId), inArray(sibling.type, onTermin)),
+          ),
         ),
       ),
   );

@@ -65,9 +65,38 @@ const BEREICH_OF: Record<AuditType, Bereich> = {
   "person.removed": "personen",
 };
 
-/** The entry types of a Bereich. */
-export function bereichTypes(bereich: Bereich): AuditType[] {
-  return (Object.keys(BEREICH_OF) as AuditType[]).filter(
-    (type) => BEREICH_OF[type] === bereich,
-  );
+/**
+ * Removing a person takes them off each Termin they were on, so there that entry is also
+ * Besetzung. A deleted Termin or Kurs needs no rule: it writes a `signup.role_changed` for
+ * everyone it takes off.
+ */
+const ALSO_BESETZUNG_ON_TERMIN: ReadonlySet<AuditType> = new Set([
+  "person.removed",
+]);
+
+/**
+ * The Bereiche of an entry. A part of an action (its entries on one Termin, or those on
+ * none) shows under the Bereiche of all its entries, so under Besetzung whenever it changed
+ * someone's signup.
+ */
+export function bereicheOf(entry: {
+  type: AuditType;
+  terminId?: string | null;
+}): Bereich[] {
+  const bereich = BEREICH_OF[entry.type];
+  return entry.terminId && ALSO_BESETZUNG_ON_TERMIN.has(entry.type)
+    ? [bereich, "besetzung"]
+    : [bereich];
+}
+
+/** The entry types of a Bereich (see `bereicheOf`), for entries on no Termin and on one. */
+export function bereichTypes(bereich: Bereich): {
+  withoutTermin: AuditType[];
+  onTermin: AuditType[];
+} {
+  const types = (terminId: string | null) =>
+    (Object.keys(BEREICH_OF) as AuditType[]).filter((type) =>
+      bereicheOf({ type, terminId }).includes(bereich),
+    );
+  return { withoutTermin: types(null), onTermin: types("termin") };
 }
