@@ -101,16 +101,37 @@ export function StatusChip({
 
 /**
  * Lock with "Festgeschrieben" on an upcoming festgeschriebener Termin, nothing otherwise
- * (every past Termin is festgeschrieben, so the lock would say nothing there).
+ * (every past Termin is festgeschrieben, so the lock would say nothing there). A chip in
+ * lists, a line with an optional `detail` in panels.
  */
-export function FestgeschriebenChip({
+export function FestgeschriebenLock({
   termin,
+  variant = "chip",
+  detail,
   className,
 }: {
   termin: { festgeschrieben: boolean; isPast: boolean };
+  variant?: "chip" | "line";
+  detail?: string;
   className?: string;
 }) {
   if (!termin.festgeschrieben || termin.isPast) return null;
+  if (variant === "line") {
+    return (
+      <p
+        className={cn(
+          "flex items-center gap-1.5 text-sm text-zinc-700",
+          className,
+        )}
+      >
+        <Lock aria-hidden="true" className="size-4 shrink-0" />
+        <span>
+          <span className="font-semibold">Festgeschrieben</span>
+          {detail && ` · ${detail}`}
+        </span>
+      </p>
+    );
+  }
   return (
     <span
       className={cn(

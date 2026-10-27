@@ -1,4 +1,4 @@
-import { ChevronDown, Lock, Pencil, Trash2, X } from "lucide-react";
+import { ChevronDown, Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { moreHistory } from "@/app/(app)/actions";
 import { removeTermin } from "@/app/(app)/kurse/actions";
@@ -13,7 +13,12 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { HistoryList } from "@/components/history-list";
 import { MoveButtons } from "@/components/move-buttons";
-import { Avatar, kursLabel, StatusChip } from "@/components/termin-bits";
+import {
+  Avatar,
+  FestgeschriebenLock,
+  kursLabel,
+  StatusChip,
+} from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import { buttonVariants } from "@/components/ui/button";
 import type { HistoryView } from "@/lib/audit-text";
@@ -107,18 +112,15 @@ export function AdminTerminPanel({
             {formatDate(termin.date)} · {formatTimeRange(termin)}
             {termin.location && ` · ${termin.location}`}
           </p>
-          {termin.festgeschrieben && !termin.isPast && (
-            <p className="flex items-center gap-1.5 text-sm text-zinc-700">
-              <Lock aria-hidden="true" className="size-4 shrink-0" />
-              <span>
-                <span className="font-semibold">Festgeschrieben</span>
-                {" · "}
-                {termin.festgeschriebenManuell
-                  ? "manuell"
-                  : "automatisch (weniger als 3 Monate)"}
-              </span>
-            </p>
-          )}
+          <FestgeschriebenLock
+            termin={termin}
+            variant="line"
+            detail={
+              termin.festgeschriebenManuell
+                ? "manuell"
+                : "automatisch (weniger als 3 Monate)"
+            }
+          />
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip termin={termin} />
             <Link

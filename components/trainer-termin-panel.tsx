@@ -1,11 +1,15 @@
-import { CalendarDays, Clock, Lock, MapPin, Plus } from "lucide-react";
+import { CalendarDays, Clock, MapPin, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   SignupCta,
   type SignupCtaProps,
   type SignupOption,
 } from "@/components/signup-cta";
-import { Avatar, kursLabel } from "@/components/termin-bits";
+import {
+  Avatar,
+  FestgeschriebenLock,
+  kursLabel,
+} from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import type { SignupView, TerminView } from "@/lib/dal/read-model";
 import { formatLongDate, formatTimeRange } from "@/lib/dates";
@@ -50,16 +54,18 @@ export function TrainerTerminPanel({
       footer={<SignupCta {...cta(termin, viewer, mine, options)} />}
     >
       <div className="flex flex-col gap-5">
-        <ul className="flex flex-col gap-2.5 text-[15px]">
-          <MetaLine icon={CalendarDays}>{formatLongDate(termin.date)}</MetaLine>
-          <MetaLine icon={Clock}>{formatTimeRange(termin)} Uhr</MetaLine>
-          {termin.location && (
-            <MetaLine icon={MapPin}>{termin.location}</MetaLine>
-          )}
-          {termin.festgeschrieben && !termin.isPast && (
-            <MetaLine icon={Lock}>Festgeschrieben</MetaLine>
-          )}
-        </ul>
+        <div className="flex flex-col gap-2.5">
+          <ul className="flex flex-col gap-2.5 text-[15px]">
+            <MetaLine icon={CalendarDays}>
+              {formatLongDate(termin.date)}
+            </MetaLine>
+            <MetaLine icon={Clock}>{formatTimeRange(termin)} Uhr</MetaLine>
+            {termin.location && (
+              <MetaLine icon={MapPin}>{termin.location}</MetaLine>
+            )}
+          </ul>
+          <FestgeschriebenLock termin={termin} variant="line" />
+        </div>
         {termin.kursDescription && (
           <p className="text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
             {termin.kursDescription}

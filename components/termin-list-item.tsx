@@ -3,7 +3,7 @@ import Link from "next/link";
 import {
   ClaimChip,
   DateBlock,
-  FestgeschriebenChip,
+  FestgeschriebenLock,
   kursLabel,
   RoleChip,
   SlotDots,
@@ -52,7 +52,7 @@ export function TerminListItem({
         </span>
         <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-2">
           <SlotDots termin={termin} />
-          <FestgeschriebenChip termin={termin} />
+          <FestgeschriebenLock termin={termin} />
           {mine && canClaimPlace(termin, mine.profileId) ? (
             <ClaimChip className="ml-auto" />
           ) : mine ? (

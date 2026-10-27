@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/empty-state";
 import { FilterChips } from "@/components/filter-chips";
 import {
   AvatarSlots,
-  FestgeschriebenChip,
+  FestgeschriebenLock,
   kursLabel,
   StatusChip,
 } from "@/components/termin-bits";
@@ -455,7 +455,7 @@ function AdminTerminRowContent({
             {formatTimeRange(termin)}
             {termin.location && ` · ${termin.location}`}
           </span>
-          <FestgeschriebenChip termin={termin} />
+          <FestgeschriebenLock termin={termin} />
         </span>
       </span>
       <span className="col-start-2 flex flex-wrap items-center gap-3 @4xl:contents">
