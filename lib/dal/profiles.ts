@@ -162,7 +162,11 @@ export async function removePerson(profileId: string): Promise<void> {
   if (isEnvAdmin(target.email)) throw new DomainError("admin-aus-env");
 
   await mutateStaffing({
-    actorId: admin.id,
+    action: {
+      type: "person.removed",
+      actor: admin,
+      target: { profileId },
+    },
     terminIds: async (tx) => {
       const rows = await tx
         .select({ terminId: signups.terminId })

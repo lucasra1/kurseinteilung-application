@@ -12,6 +12,8 @@ import { FilterChips } from "@/components/filter-chips";
 import { AvatarSlots, kursLabel, StatusChip } from "@/components/termin-bits";
 import { buttonVariants } from "@/components/ui/button";
 import { WithPanel } from "@/components/with-panel";
+import { historyGroups } from "@/lib/audit-text";
+import { terminHistory } from "@/lib/dal/audit";
 import { listPeople } from "@/lib/dal/profiles";
 import {
   type AdminSignupView,
@@ -100,12 +102,13 @@ export async function AdminView({
   const open = countOf("offen");
   const visible = status ? inKurs.filter((t) => matches(t, status)) : inKurs;
 
-  const [selected, people] = query.termin
+  const [selected, people, history] = query.termin
     ? await Promise.all([
         all.find((t) => t.id === query.termin) ?? findAdminTermin(query.termin),
         listPeople(),
+        terminHistory(query.termin),
       ])
-    : [null, []];
+    : [null, [], null];
 
   const filters = {
     kurs: kursId,
@@ -119,11 +122,16 @@ export async function AdminView({
   return (
     <WithPanel
       panel={
-        selected && (
+        selected &&
+        history && (
           <AdminTerminPanel
             key={selected.id}
             termin={selected}
             people={people}
+            history={{
+              groups: historyGroups(history.events),
+              nextCursor: history.nextCursor,
+            }}
             closeHref={href({})}
           />
         )

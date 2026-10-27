@@ -9,6 +9,7 @@
     "lint": "biome check",
     "format": "biome format --write",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "sb:start": "supabase start",
@@ -42,7 +43,8 @@
     "drizzle-kit": "^0.31.11",
     "supabase": "^2.122.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.5"
   },
   "packageManager": "pnpm@12.3.4"
 }
