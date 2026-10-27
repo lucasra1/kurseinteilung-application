@@ -22,6 +22,7 @@ export async function signUpSelf(terminId: string, kind: Kind): Promise<void> {
       actor: user,
       target: { terminId, profileId: user.id },
     },
+    bestaetigt: "nie-noetig",
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       const termin = lockedTermin(termine, terminId);
@@ -31,7 +32,11 @@ export async function signUpSelf(terminId: string, kind: Kind): Promise<void> {
   });
 }
 
-export async function withdrawSelf(terminId: string): Promise<void> {
+/** `bestaetigt`: the Warndialog was confirmed (see `Bestaetigt`). */
+export async function withdrawSelf(
+  terminId: string,
+  bestaetigt: boolean,
+): Promise<void> {
   const user = await requireUser();
   await mutateStaffing({
     action: {
@@ -39,6 +44,7 @@ export async function withdrawSelf(terminId: string): Promise<void> {
       actor: user,
       target: { terminId, profileId: user.id },
     },
+    bestaetigt,
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       const termin = lockedTermin(termine, terminId);
@@ -57,6 +63,7 @@ export async function claimPlace(terminId: string): Promise<void> {
       actor: user,
       target: { terminId, profileId: user.id },
     },
+    bestaetigt: "nie-noetig",
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       const termin = lockedTermin(termine, terminId);
@@ -85,6 +92,7 @@ export async function adminAddSignup(
       actor: admin,
       target: { terminId, profileId },
     },
+    bestaetigt: "nie-noetig",
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       await appendSignup(tx, lockedTermin(termine, terminId), profileId, kind);
@@ -92,9 +100,11 @@ export async function adminAddSignup(
   });
 }
 
+/** `bestaetigt`: the Warndialog was confirmed (see `Bestaetigt`). */
 export async function adminRemoveSignup(
   terminId: string,
   profileId: string,
+  bestaetigt: boolean,
 ): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
@@ -103,6 +113,7 @@ export async function adminRemoveSignup(
       actor: admin,
       target: { terminId, profileId },
     },
+    bestaetigt,
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       await removeSignup(tx, lockedTermin(termine, terminId).id, profileId);
@@ -125,6 +136,7 @@ export async function adminGivePlace(
       actor: admin,
       target: { terminId, profileId },
     },
+    bestaetigt: "nie-noetig",
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       await claimHeldPlace(tx, lockedTermin(termine, terminId), profileId);
@@ -146,6 +158,7 @@ export async function adminMoveSignup(
       target: { terminId, profileId },
       direction,
     },
+    bestaetigt: "nie-noetig",
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       lockedTermin(termine, terminId);

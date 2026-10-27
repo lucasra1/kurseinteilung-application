@@ -72,6 +72,7 @@ export async function deleteKurs(id: string): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
     action: { type: "kurs.deleted", actor: admin, target: { kursId: id } },
+    bestaetigt: "nie-noetig",
     terminIds: (tx) => terminIdsOfKurs(tx, id),
     run: async (tx) => {
       const [deleted] = await tx
@@ -102,14 +103,19 @@ export async function createTermin(
   });
 }
 
-/** The staffing numbers decide who holds a fixed place, so this goes through mutateStaffing. */
+/**
+ * The staffing numbers decide who holds a fixed place, so this goes through mutateStaffing.
+ * `bestaetigt`: the Warndialog was confirmed (see `Bestaetigt`).
+ */
 export async function updateTermin(
   id: string,
   input: TerminInput,
+  bestaetigt: boolean,
 ): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
     action: { type: "termin.updated", actor: admin, target: { terminId: id } },
+    bestaetigt,
     terminIds: async () => [id],
     run: async (tx, locked) => {
       lockedTermin(locked, id);
@@ -136,6 +142,7 @@ export async function setFestgeschrieben(
       actor: admin,
       target: { terminIds },
     },
+    bestaetigt: "nie-noetig",
     terminIds: async () => terminIds,
     run: async (tx, locked) => {
       const upcoming = [...locked.values()].filter((t) => t.date >= today);
@@ -167,6 +174,7 @@ export async function deleteTermin(id: string): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
     action: { type: "termin.deleted", actor: admin, target: { terminId: id } },
+    bestaetigt: "nie-noetig",
     terminIds: async () => [id],
     run: async (tx, locked) => {
       lockedTermin(locked, id);

@@ -136,3 +136,8 @@ export function parseTerminRows(formData: FormData): TerminInput[] {
     return result.data;
   });
 }
+
+/** The Warndialog was confirmed: the form resent with `bestaetigt=1`. */
+export function isBestaetigt(formData: FormData): boolean {
+  return formData.get("bestaetigt") === "1";
+}

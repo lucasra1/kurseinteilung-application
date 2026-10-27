@@ -5,11 +5,21 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { removeTermin, saveTermin } from "@/app/(app)/kurse/actions";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { FormMessage } from "@/components/form-message";
+import { confirmationOf, FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import { StatusChip } from "@/components/termin-bits";
 import { TerminFields, type TerminValues } from "@/components/termin-fields";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import type { ActionResult } from "@/lib/action-result";
 import type { Missing, Role } from "@/lib/staffing";
 import { hrefWith } from "@/lib/url";
 import { cn } from "@/lib/utils";
@@ -38,7 +48,17 @@ export function TerminRowForm({
     praxisanleiterNeeded: termin.praxisanleiterNeeded,
   };
   const [values, setValues] = useState(saved);
-  const [result, formAction] = useActionState(saveTermin, null);
+  const [warning, setWarning] = useState({ text: "", open: false });
+  const [result, formAction, pending] = useActionState(
+    async (prev: ActionResult, formData: FormData) => {
+      const next = await saveTermin(prev, formData);
+      const text = confirmationOf(next);
+      // Keeps the last text while the dialog closes.
+      setWarning((was) => ({ text: text ?? was.text, open: text !== null }));
+      return next;
+    },
+    null,
+  );
   const dirty = (Object.keys(saved) as (keyof TerminValues)[]).some(
     (key) => values[key] !== saved[key],
   );
@@ -115,6 +135,32 @@ export function TerminRowForm({
           />
         </div>
       </div>
+      <AlertDialog
+        open={warning.open}
+        onOpenChange={(open) => setWarning((was) => ({ ...was, open }))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{rowLabel} speichern?</AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line">
+              {warning.text}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            {/* Sends the row's form again, now confirmed. */}
+            <Button
+              type="submit"
+              form={formId}
+              name="bestaetigt"
+              value="1"
+              disabled={pending}
+            >
+              Trotzdem speichern
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </li>
   );
 }

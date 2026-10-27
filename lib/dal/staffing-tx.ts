@@ -11,7 +11,7 @@ import { logEvents } from "@/lib/dal/audit";
 import { isPastDate, todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
-import { DomainError } from "@/lib/errors";
+import { ConfirmationRequired, DomainError } from "@/lib/errors";
 import {
   type Gebraucht,
   type PlatzFrei,
@@ -33,8 +33,10 @@ import {
   type RoleSnapshot,
   rankSignups,
   sortByPosition,
+  type Triggered,
   triggered,
 } from "@/lib/staffing";
+import { type Warning, warningText } from "@/lib/warning-text";
 
 export type LockedTermin = StaffingTermin;
 
@@ -280,6 +282,54 @@ async function writeCounters(
 }
 
 /**
+ * The Warndialog (spec 3) for an action that would trigger an Ausschreibung or an Aufruf:
+ * - `false`: stop with `ConfirmationRequired` (the dialog text), nothing is written;
+ * - `true`: the person confirmed; it runs on the state as it is now, whatever the dialog said;
+ * - `"nie-noetig"`: the action never triggers by the rule (eintragen, übernehmen, Platz
+ *   geben, ↑/↓, löschen, festschreiben). If it does anyway, that's a bug: it fails instead
+ *   of sending mails nobody was warned about.
+ */
+export type Bestaetigt = boolean | "nie-noetig";
+
+/** What the triggered roles would do, for the dialog text. */
+function warnings(
+  triggers: Triggered[],
+  afterRun: Map<string, LockedTermin>,
+  calls: Aufruf<AufrufRecipient>[],
+): Warning[] {
+  return triggers.flatMap(({ terminId, kind, trigger }): Warning[] => {
+    const termin = afterRun.get(terminId);
+    if (!termin) return [];
+    if (trigger.type === "backups") {
+      const backups = trigger.recipients.length;
+      return [
+        { termin, kind, type: "backups", places: trigger.places, backups },
+      ];
+    }
+    const call = calls.find((c) => c.terminId === terminId && c.kind === kind);
+    const qualified = call?.recipients.length ?? 0;
+    return [
+      { termin, kind, type: "aufruf", places: trigger.places, qualified },
+    ];
+  });
+}
+
+/** Throws unless the action may go on; see `Bestaetigt`. */
+function confirm(
+  action: StaffingAction,
+  bestaetigt: Bestaetigt,
+  pending: Warning[],
+): void {
+  if (pending.length === 0 || bestaetigt === true) return;
+  if (bestaetigt === "nie-noetig") {
+    throw new Error(
+      `${action.type} would trigger an Ausschreibung, which the rule never lets it do`,
+    );
+  }
+  throw new ConfirmationRequired(warningText(pending));
+}
+
+/**
  * Runs a change to the signups of some Termine in one transaction: locks the Termin rows
  * first (in id order, so concurrent changes queue up instead of deadlocking), applies the
  * Ausschreibung rule (`planAusschreibung`), diffs roles before and after, writes the
@@ -288,6 +338,8 @@ async function writeCounters(
  */
 export async function mutateStaffing<T>(opts: {
   action: StaffingAction;
+  /** See `Bestaetigt`. */
+  bestaetigt: Bestaetigt;
   terminIds: (tx: Tx) => Promise<string[]>;
   run: (tx: Tx, termine: Map<string, LockedTermin>) => Promise<T>;
 }): Promise<T> {
@@ -316,9 +368,13 @@ export async function mutateStaffing<T>(opts: {
       signupsBefore,
       signupsAfter,
     );
-    // Nothing of the rule is written yet: a check on `triggered(plans)` that throws here
-    // (e.g. a confirmation) rolls the whole action back, without counters, Verlauf or mails.
-    // `calls` says how many qualified an Aufruf would write to.
+    // Nothing of the rule is written yet: throwing here rolls the whole action back, without
+    // counters, Verlauf or mails.
+    confirm(
+      action,
+      opts.bestaetigt,
+      warnings(triggered(plans), afterRun, calls),
+    );
     const after = await writeCounters(tx, afterRun, plans);
 
     const rankedBefore = rankedByTermin(before, signupsBefore);

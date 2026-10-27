@@ -31,3 +31,14 @@ export class DomainError extends Error {
     this.code = code;
   }
 }
+
+/**
+ * The action would trigger an Ausschreibung or an Aufruf and isn't confirmed yet (spec 3,
+ * Warndialog): nothing was written, `message` is the dialog text.
+ */
+export class ConfirmationRequired extends Error {
+  constructor(text: string) {
+    super(text);
+    this.name = "ConfirmationRequired";
+  }
+}

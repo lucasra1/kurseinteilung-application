@@ -216,8 +216,14 @@ export async function setQualification(
   });
 }
 
-/** Removes the person from all Termine (others move up and get notified), then deletes the account. */
-export async function removePerson(profileId: string): Promise<void> {
+/**
+ * Removes the person from all Termine (others move up and get notified), then deletes the
+ * account. `bestaetigt`: the Warndialog was confirmed (see `Bestaetigt`).
+ */
+export async function removePerson(
+  profileId: string,
+  bestaetigt: boolean,
+): Promise<void> {
   const admin = await requireAdmin();
   if (profileId === admin.id) throw new DomainError("selbst-entfernen");
   const target = await findProfile(profileId);
@@ -229,6 +235,7 @@ export async function removePerson(profileId: string): Promise<void> {
       actor: admin,
       target: { profileId },
     },
+    bestaetigt,
     terminIds: async (tx) => {
       const rows = await tx
         .select({ terminId: signups.terminId })

@@ -16,7 +16,7 @@ import {
   withdrawSelf,
 } from "@/lib/dal/signups";
 import { festschreibungMessage } from "@/lib/staffing";
-import { kindSchema, uuidSchema } from "@/lib/validation";
+import { isBestaetigt, kindSchema, uuidSchema } from "@/lib/validation";
 
 const signupFormSchema = z.object({
   terminId: uuidSchema,
@@ -39,7 +39,7 @@ export async function changeSignup(
       await claimPlace(terminId);
       return "Du hast den Platz übernommen.";
     }
-    await withdrawSelf(terminId);
+    await withdrawSelf(terminId, isBestaetigt(formData));
     return "Du bist ausgetragen.";
   });
 }
@@ -72,7 +72,7 @@ export async function removeSignupAction(
     const { terminId, profileId } = adminSignupForm.parse(
       Object.fromEntries(formData),
     );
-    await adminRemoveSignup(terminId, profileId);
+    await adminRemoveSignup(terminId, profileId, isBestaetigt(formData));
     return "Ausgetragen.";
   });
 }
