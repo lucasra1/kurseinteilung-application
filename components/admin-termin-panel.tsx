@@ -176,9 +176,9 @@ function KindSection({
   const fixed = ofKind.filter((s) => !isBackup(s.role));
   const backups = ofKind.filter((s) => isBackup(s.role));
   const total = needed(termin, kind);
-  // Missing places are held ones (ausgeschrieben) first, then plain free ones.
-  const held = ausgeschrieben(termin, kind);
-  const free = Math.max(0, termin.missing[kind] - held);
+  // Missing places are the ausgeschriebenen ones first, then plain free ones.
+  const ausgeschriebene = ausgeschrieben(termin, kind);
+  const free = Math.max(0, termin.missing[kind] - ausgeschriebene);
 
   return (
     <section className="flex flex-col gap-1.5">
@@ -198,10 +198,10 @@ function KindSection({
             isLast={signup.rank === ofKind.length}
           />
         ))}
-        {Array.from({ length: held }, (_, i) => (
+        {Array.from({ length: ausgeschriebene }, (_, i) => (
           <li
-            // biome-ignore lint/suspicious/noArrayIndexKey: one row per held place
-            key={`held-${i}`}
+            // biome-ignore lint/suspicious/noArrayIndexKey: one row per ausgeschriebenen place
+            key={`ausgeschrieben-${i}`}
             className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-brand-200 bg-brand-50 px-2.5 text-sm font-medium text-brand-700"
           >
             <span className="w-5 shrink-0 text-[13px] font-semibold">
@@ -217,7 +217,7 @@ function KindSection({
             className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
           >
             <span className="w-5 shrink-0 text-[13px] font-semibold">
-              {fixed.length + held + i + 1}
+              {fixed.length + ausgeschriebene + i + 1}
             </span>
             Freier Platz
           </li>

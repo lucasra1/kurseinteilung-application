@@ -121,10 +121,10 @@ export function auditSentence(event: AuditEvent): string {
     }
     case "place.ausgeschrieben": {
       const { kind, places, angeschrieben } = event.data;
-      const held = `${placesLabel(places, kind)} ausgeschrieben`;
+      const text = `${placesLabel(places, kind)} ausgeschrieben`;
       return angeschrieben.length > 0
-        ? `${held}, angeschrieben: ${angeschrieben.join(", ")}`
-        : held;
+        ? `${text}, angeschrieben: ${angeschrieben.join(", ")}`
+        : text;
     }
     case "place.aufruf": {
       const { kind, places, angeschrieben } = event.data;
@@ -271,7 +271,7 @@ function terminLabel(termin: TerminSnapshot, scope: HistoryScope): string {
 function group(actionId: string, entries: AuditEvent[]): HistoryGroup {
   const main = entries.find((e) => !isConsequence(e.type)) ?? entries[0];
   const rest = entries.filter((e) => e !== main);
-  // Read back, an action's entries have no order: role changes before held places.
+  // Read back, an action's entries have no order: role changes before Ausschreibungen.
   const roleChanges = rest.filter((e) => e.type === "signup.role_changed");
   const others = rest.filter((e) => e.type !== "signup.role_changed");
   return {

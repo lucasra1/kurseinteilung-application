@@ -21,7 +21,6 @@ import {
 import {
   type Aufruf,
   type AusschreibungPlan,
-  aufrufe,
   ausgeschrieben,
   diffRoles,
   hasQualification,
@@ -29,6 +28,7 @@ import {
   isFestgeschrieben,
   type Kind,
   needed,
+  planAufrufe,
   planAusschreibung,
   type RoleSnapshot,
   rankSignups,
@@ -206,7 +206,7 @@ type AufrufRecipient = { id: string; fullName: string; email: string };
 
 /**
  * The Aufrufe the plans trigger, each with the qualified who get "Du wirst gebraucht"
- * (see `aufrufe`); `recipients.length` is how many. Reads the profiles only if there is an
+ * (see `planAufrufe`); `recipients.length` is how many. Reads the profiles only if there is an
  * Aufruf. Writes nothing, so a confirmation can count the recipients before anything is
  * written.
  */
@@ -244,7 +244,7 @@ async function resolveAufrufe(
         ),
       ),
     );
-  return aufrufe({
+  return planAufrufe({
     plans,
     people,
     before: signupsBefore,
@@ -295,7 +295,7 @@ export type Bestaetigt = boolean | "nie-noetig";
 function warnings(
   triggers: Triggered[],
   afterRun: Map<string, LockedTermin>,
-  calls: Aufruf<AufrufRecipient>[],
+  aufrufe: Aufruf<AufrufRecipient>[],
 ): Warning[] {
   return triggers.flatMap(({ terminId, kind, trigger }): Warning[] => {
     const termin = afterRun.get(terminId);
@@ -306,8 +306,10 @@ function warnings(
         { termin, kind, type: "backups", places: trigger.places, backups },
       ];
     }
-    const call = calls.find((c) => c.terminId === terminId && c.kind === kind);
-    const qualified = call?.recipients.length ?? 0;
+    const aufruf = aufrufe.find(
+      (a) => a.terminId === terminId && a.kind === kind,
+    );
+    const qualified = aufruf?.recipients.length ?? 0;
     return [
       { termin, kind, type: "aufruf", places: trigger.places, qualified },
     ];
@@ -361,7 +363,7 @@ export async function mutateStaffing<T>(opts: {
       signupsBefore,
       signupsAfter,
     );
-    const calls = await resolveAufrufe(
+    const aufrufe = await resolveAufrufe(
       tx,
       action,
       plans,
@@ -373,7 +375,7 @@ export async function mutateStaffing<T>(opts: {
     confirm(
       action,
       opts.bestaetigt,
-      warnings(triggered(plans), afterRun, calls),
+      warnings(triggered(plans), afterRun, aufrufe),
     );
     const after = await writeCounters(tx, afterRun, plans);
 
@@ -388,7 +390,7 @@ export async function mutateStaffing<T>(opts: {
       before: states(before, rankedBefore),
       after: afterStates,
       plans,
-      aufrufe: calls,
+      aufrufe,
       ...names,
     });
     await logEvents(tx, action.actor, entries);
@@ -407,7 +409,7 @@ export async function mutateStaffing<T>(opts: {
       changes,
       entries,
       plans,
-      calls,
+      aufrufe,
       afterStates,
       before,
       after,
@@ -444,10 +446,10 @@ export async function mutateStaffing<T>(opts: {
     },
   );
 
-  const gebraucht: Gebraucht[] = out.calls.flatMap(
-    ({ terminId, recipients, ...call }) => {
+  const gebraucht: Gebraucht[] = out.aufrufe.flatMap(
+    ({ terminId, recipients, ...aufruf }) => {
       const termin = out.after.get(terminId);
-      return termin ? [{ termin, recipients, ...call }] : [];
+      return termin ? [{ termin, recipients, ...aufruf }] : [];
     },
   );
 
@@ -511,7 +513,7 @@ export async function appendSignup(
     .insert(signups)
     .values({ terminId: termin.id, profileId, kind, position: nextPosition });
   if (ausgeschrieben(termin, kind) > 0) {
-    await takeHeldPlace(tx, termin, profileId, kind);
+    await takeAusgeschriebenPlace(tx, termin, profileId, kind);
   }
 }
 
@@ -535,7 +537,7 @@ async function signupsInOrder(tx: Tx, terminId: string) {
  * renumbers the Termin's positions and lowers the counter by one: they now hold the place.
  * `termin` is the locked state, with a place of `kind` ausgeschrieben.
  */
-async function takeHeldPlace(
+async function takeAusgeschriebenPlace(
   tx: Tx,
   termin: LockedTermin,
   profileId: string,
@@ -579,7 +581,7 @@ async function takeHeldPlace(
  * Termin lock of `mutateStaffing` queues concurrent claims, so exactly one wins. Call only
  * inside `mutateStaffing.run`, with the action's target as the person.
  */
-export async function claimHeldPlace(
+export async function claimAusgeschriebenPlace(
   tx: Tx,
   termin: LockedTermin,
   profileId: string,
@@ -591,7 +593,7 @@ export async function claimHeldPlace(
     throw new DomainError("platz-vergeben");
   }
   if (!isBackup(signup.role)) throw new DomainError("kein-backup");
-  await takeHeldPlace(tx, termin, profileId, signup.kind);
+  await takeAusgeschriebenPlace(tx, termin, profileId, signup.kind);
 }
 
 /** Removes a person and moves everyone behind them up. Call only inside `mutateStaffing.run`. */

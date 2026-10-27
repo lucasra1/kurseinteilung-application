@@ -75,7 +75,7 @@ export async function removeSignupAction(
   });
 }
 
-/** "Platz geben" in the coordinator panel. */
+/** "Platz geben" in the admin panel. */
 export async function givePlaceAction(
   _prev: ActionResult,
   formData: FormData,
@@ -110,7 +110,7 @@ const festschreibungForm = z.object({
     .min(1, { error: "Bitte wähl mindestens einen Termin aus." }),
 });
 
-/** Festschreiben or Aufheben for the Termine selected in the coordinator timeline. */
+/** Festschreiben or Aufheben for the Termine selected in the admin timeline. */
 export async function changeFestschreibung(
   _prev: ActionResult,
   formData: FormData,

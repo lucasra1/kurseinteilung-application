@@ -54,7 +54,7 @@ export type TerminView<S = SignupView> = {
   location: string | null;
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
-  /** Fixed places held for the backups (`ausgeschrieben(termin, kind)`); they count as missing. */
+  /** Ausgeschriebene fixed places (`ausgeschrieben(termin, kind)`); they count as missing. */
   instruktorenAusgeschrieben: number;
   praxisanleiterAusgeschrieben: number;
   /** In signup order. */

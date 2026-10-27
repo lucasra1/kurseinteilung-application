@@ -636,7 +636,7 @@ describe("explicitlyPlaced", () => {
     expect(explicitlyPlaced(action, onTermin)).toEqual(new Set([BEN.id]));
   });
 
-  it("is the person given the place for Platz geben, not the coordinator", () => {
+  it("is the person given the place for Platz geben, not the admin", () => {
     const action = {
       type: "signup.place_given",
       actor: LEA,
@@ -669,7 +669,7 @@ describe("staffingEvents for Ausschreibung", () => {
   const CLARA = { id: "clara", fullName: "Clara Ott" };
   const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
 
-  it("writes the withdrawal, then the held place with the names written to", () => {
+  it("writes the withdrawal, then the ausgeschriebenen place with the names written to", () => {
     const events = staffingEvents({
       action: {
         type: "signup.removed",
@@ -831,7 +831,7 @@ describe("staffingEvents for Ausschreibung", () => {
     ]);
   });
 
-  it("writes Platz geben as the role change of the person given the place, not of the coordinator", () => {
+  it("writes Platz geben as the role change of the person given the place, not of the admin", () => {
     const events = staffingEvents({
       action: {
         type: "signup.place_given",

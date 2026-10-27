@@ -18,7 +18,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   "backup-praxisanleiter": "Backup (Praxisanleiter)",
 };
 
-/** Places needed per kind, and how many of them are ausgeschrieben (held for the backups). */
+/** Places needed per kind, and how many of them are ausgeschrieben. */
 export type Staffing = {
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
@@ -26,7 +26,7 @@ export type Staffing = {
   praxisanleiterAusgeschrieben: number;
 };
 
-/** Just the places needed, for what doesn't depend on held places. */
+/** Just the places needed, for what doesn't depend on ausgeschriebenen places. */
 export type Needed = Pick<
   Staffing,
   "instruktorenNeeded" | "praxisanleiterNeeded"
@@ -110,7 +110,7 @@ export function nextRole(
 
 /**
  * Whether `profileId` is a backup of a role with an ausgeschriebenen place on the Termin,
- * so they can take it (Platz übernehmen, or a coordinator's Platz geben).
+ * so they can take it (Platz übernehmen, or an admin's Platz geben).
  */
 export function canClaimPlace(
   termin: Staffing & { signups: { profileId: string; role: Role }[] },
@@ -308,7 +308,7 @@ function planRole(
   if (!input.festgeschrieben) return { ausgeschrieben: 0, trigger: none };
   const counted = count;
 
-  // 4. Backups who would move up stay backups: their places are held instead. Repeated,
+  // 4. Backups who would move up stay backups: their places are ausgeschrieben. Repeated,
   // since a number raised by more than the backups would still lift one.
   const wasBackup = new Set(
     rankedBefore.filter((s) => s.role === backup).map((s) => s.profileId),
@@ -328,7 +328,7 @@ function planRole(
     rankedAfter = rankWith(count);
   }
 
-  // 5. More fixed places missing than before: offer them to the backups, else call out.
+  // 5. More fixed places missing than before: offer them to the backups, else an Aufruf.
   const more =
     missingPlaces(rankedAfter, after.staffing)[kind] -
     missingPlaces(rankedBefore, before.staffing)[kind];
@@ -386,7 +386,7 @@ export function triggered(plans: AusschreibungPlan[]): Triggered[] {
 
 type TerminSignup = { terminId: string; profileId: string };
 
-/** An Aufruf for one role of a Termin: `places` missing without a backup, and whom to call. */
+/** An Aufruf for one role of a Termin: `places` missing without a backup, and its recipients. */
 export type Aufruf<P> = {
   terminId: string;
   kind: Kind;
@@ -400,7 +400,7 @@ export type Aufruf<P> = {
  * Whoever the change just took off the Termin isn't called back either: they get
  * "Ausgetragen".
  */
-export function aufrufe<P extends { id: string } & Qualifications>(input: {
+export function planAufrufe<P extends { id: string } & Qualifications>(input: {
   plans: AusschreibungPlan[];
   people: P[];
   /** Who was on the Termine before the change, and who is afterwards. */

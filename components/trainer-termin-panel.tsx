@@ -115,15 +115,15 @@ function cta(
     };
   }
   if (mine) {
-    const held = ausgeschrieben(termin, mine.kind);
+    const ausgeschriebene = ausgeschrieben(termin, mine.kind);
     if (canClaimPlace(termin, mine.profileId)) {
       return {
         terminId,
         mode: "uebernehmen",
         hint:
-          held === 1
+          ausgeschriebene === 1
             ? `Ein ${KIND_LABEL[mine.kind].one}-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.`
-            : `${placesLabel(held, mine.kind)} sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.`,
+            : `${placesLabel(ausgeschriebene, mine.kind)} sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.`,
       };
     }
     const many = KIND_LABEL[mine.kind].many;

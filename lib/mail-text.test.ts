@@ -5,7 +5,7 @@ import {
   staffingEvents,
   type TerminState,
 } from "@/lib/audit";
-import { coordinatorMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
+import { adminMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
 import type { Aufruf, AusschreibungPlan, Kind, Role } from "@/lib/staffing";
 
 const LEA = { id: "lea", fullName: "Lea Berger" };
@@ -53,7 +53,7 @@ function state(
   return { termin, signups };
 }
 
-/** The coordinator mail for an action, with entries built the way mutateStaffing builds them. */
+/** The admin mail for an action, with entries built the way mutateStaffing builds them. */
 function mail(
   action: StaffingAction,
   before: TerminState[],
@@ -63,7 +63,7 @@ function mail(
   aufrufe: Aufruf<unknown>[] = [],
 ) {
   const entries = staffingEvents({ action, before, after, plans, aufrufe });
-  return coordinatorMail({
+  return adminMail({
     actor: action.actor,
     entries,
     after,
@@ -72,7 +72,7 @@ function mail(
   });
 }
 
-describe("coordinatorMail", () => {
+describe("adminMail", () => {
   it("describes a self-withdrawal, the backup moving up and the Stand afterwards", () => {
     expect(
       mail(
@@ -368,7 +368,7 @@ describe("coordinatorMail", () => {
   });
 });
 
-describe("coordinatorMail for Festschreiben", () => {
+describe("adminMail for Festschreiben", () => {
   const anna = [signup(ANNA, "instruktor", 1, "instruktor")];
   const T2: StaffingTermin = { ...T1, id: "t2", topic: "Tag 2" };
 
@@ -392,7 +392,7 @@ describe("coordinatorMail for Festschreiben", () => {
   });
 });
 
-describe("coordinatorMail for Ausschreibung", () => {
+describe("adminMail for Ausschreibung", () => {
   const CLARA = { id: "clara", fullName: "Clara Ott" };
   const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
   const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
@@ -480,7 +480,7 @@ describe("coordinatorMail for Ausschreibung", () => {
     });
   });
 
-  it("tells the other coordinators who gave whom the place", () => {
+  it("tells the other admins who gave whom the place", () => {
     expect(
       mail(
         {
@@ -508,7 +508,7 @@ describe("coordinatorMail for Ausschreibung", () => {
   });
 });
 
-describe("coordinatorMail for Aufruf", () => {
+describe("adminMail for Aufruf", () => {
   const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
   const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
   const plans: AusschreibungPlan[] = [

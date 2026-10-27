@@ -111,10 +111,10 @@ function consequenceLine(entry: AuditEntry, actor: Actor): string {
     case "place.ausgeschrieben": {
       const { kind, places, angeschrieben } = entry.data;
       const verb = places === 1 ? "ist" : "sind";
-      const held = `– Der Termin ist festgeschrieben: ${placesLabel(places, kind)} ${verb} ausgeschrieben.`;
-      if (angeschrieben.length === 0) return held;
+      const line = `– Der Termin ist festgeschrieben: ${placesLabel(places, kind)} ${verb} ausgeschrieben.`;
+      if (angeschrieben.length === 0) return line;
       const who = angeschrieben.length === 1 ? "Backup" : "Backups";
-      return `${held} Angeschrieben: ${angeschrieben.join(", ")} (${who}).`;
+      return `${line} Angeschrieben: ${angeschrieben.join(", ")} (${who}).`;
     }
     case "place.aufruf": {
       const { angeschrieben } = entry.data;
@@ -156,7 +156,7 @@ function subject(main: AuditEntry, termin: TerminSnapshot, actor: Actor) {
  * The mail to the Praxisanleiterkoordinator:innen about one staffing action: per Termin the
  * action, its consequences as "– …" lines, the Stand afterwards and a link.
  */
-export function coordinatorMail(input: {
+export function adminMail(input: {
   actor: Actor;
   /** The action's entries in the order `staffingEvents` built them. */
   entries: AuditEntry[];

@@ -71,11 +71,11 @@ export type AuditData = {
   "signup.role_changed": { termin: TerminSnapshot } & RoleShift;
   /** A backup took an ausgeschriebenen place (Backup → role). */
   "signup.claimed": { termin: TerminSnapshot } & RoleShift;
-  /** A coordinator gave a backup an ausgeschriebenen place (Backup → role). */
+  /** An admin gave a backup an ausgeschriebenen place (Backup → role). */
   "signup.place_given": { termin: TerminSnapshot } & RoleShift;
   /**
-   * A consequence: `places` of `kind` held for the backups; `angeschrieben` are the names of
-   * those who got "Platz frei".
+   * A consequence: `places` of `kind` ausgeschrieben; `angeschrieben` are the names of the
+   * backups who got "Platz frei".
    */
   "place.ausgeschrieben": {
     termin: TerminSnapshot;
@@ -261,7 +261,7 @@ export function staffingEvents(input: {
   after: TerminState[];
   /** What `planAusschreibung` decided per Termin. */
   plans?: AusschreibungPlan[];
-  /** The Aufrufe of those plans, with the qualified written to (see `aufrufe`). */
+  /** The Aufrufe of those plans, with the qualified written to (see `planAufrufe`). */
   aufrufe?: Aufruf<unknown>[];
   /** The target person's name, needed when they're on none of the Termine. */
   targetName?: string;
@@ -269,7 +269,7 @@ export function staffingEvents(input: {
   kursTitle?: string;
 }): AuditEntry[] {
   const { action } = input;
-  const held = triggered(input.plans ?? []);
+  const triggers = triggered(input.plans ?? []);
   const targetId =
     "profileId" in action.target ? action.target.profileId : undefined;
 
@@ -327,7 +327,7 @@ export function staffingEvents(input: {
         profileId,
         data: { termin, ...data },
       }));
-    const ausgeschrieben: AuditEntry[] = held.flatMap(
+    const ausgeschrieben: AuditEntry[] = triggers.flatMap(
       ({ terminId, kind, trigger }) =>
         terminId === was.termin.id && trigger.type === "backups"
           ? [

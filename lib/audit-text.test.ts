@@ -548,7 +548,7 @@ describe("auditSentence for Ausschreibung", () => {
       data: { termin, kind: "instruktor", places, angeschrieben },
     });
 
-  it("names the held places and who was written to", () => {
+  it("names the ausgeschriebenen places and who was written to", () => {
     expect(auditSentence(ausgeschrieben(1, ["Ben Maier", "Clara Ott"]))).toBe(
       "1 Instruktor-Platz ausgeschrieben, angeschrieben: Ben Maier, Clara Ott",
     );
@@ -620,7 +620,7 @@ describe("auditSentence for Ausschreibung", () => {
     ).toBe("Ben Maier hat den Platz übernommen (Backup → Instruktor)");
   });
 
-  it("says which coordinator gave whom the place", () => {
+  it("says which admin gave whom the place", () => {
     expect(
       auditSentence(
         event(LEA, {
@@ -645,7 +645,7 @@ describe("auditSentence for Ausschreibung", () => {
       profileId: ANNA.id,
       data: { termin, personName: ANNA.name, from: "instruktor", to: null },
     });
-    const held = event(ANNA, {
+    const ausgeschrieben = event(ANNA, {
       type: "place.ausgeschrieben",
       data: {
         termin,
@@ -665,7 +665,7 @@ describe("auditSentence for Ausschreibung", () => {
       },
     });
 
-    expect(historyGroups([held, becameBackup, removed])).toEqual([
+    expect(historyGroups([ausgeschrieben, becameBackup, removed])).toEqual([
       {
         actionId: "a1",
         time: "Sa., 31.10., 14:05",

@@ -13,7 +13,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { changeFestschreibung } from "./actions";
 
 /**
- * The selection mode of the coordinator timeline: wraps the list, whose rows carry
+ * The selection mode of the admin timeline: wraps the list, whose rows carry
  * checkboxes named `terminId`, and adds "Alle auswählen" plus a bar at the bottom to
  * festschreiben or aufheben what is selected. `total` is the number of checkboxes, i.e. the
  * upcoming Termine in the current filter. Render it with a key per filter, so a new filter

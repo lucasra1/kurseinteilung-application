@@ -52,10 +52,10 @@ export const termine = appSchema.table(
     location: text(),
     instruktorenNeeded: integer().notNull().default(0),
     praxisanleiterNeeded: integer().notNull().default(0),
-    /** Fixed places held for the backups; see `planAusschreibung` in lib/staffing.ts. */
+    /** Ausgeschriebene fixed places; see `planAusschreibung` in lib/staffing.ts. */
     instruktorenAusgeschrieben: integer().notNull().default(0),
     praxisanleiterAusgeschrieben: integer().notNull().default(0),
-    /** Set manually by a coordinator; see `isFestgeschrieben` in lib/staffing.ts. */
+    /** Set manually by an admin; see `isFestgeschrieben` in lib/staffing.ts. */
     festgeschrieben: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
