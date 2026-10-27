@@ -33,7 +33,7 @@ import {
   formatWeekday,
   groupByMonth,
 } from "@/lib/dates";
-import { isBackup, KIND_LABEL, type Kind } from "@/lib/staffing";
+import { isBackup, KIND_LABEL, type Kind, needed } from "@/lib/staffing";
 import { hrefWith } from "@/lib/url";
 import { cn } from "@/lib/utils";
 import { FestschreibungForm } from "./festschreibung-form";
@@ -492,10 +492,7 @@ function KindSlots({
   termin: TerminView<AdminSignupView>;
   kind: Kind;
 }) {
-  const total =
-    kind === "instruktor"
-      ? termin.instruktorenNeeded
-      : termin.praxisanleiterNeeded;
+  const total = needed(termin, kind);
   if (total === 0) {
     return (
       <span

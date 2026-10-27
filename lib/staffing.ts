@@ -39,14 +39,27 @@ export type Qualifications = {
   isPraxisanleiter: boolean;
 };
 
+/** The `Staffing` fields of a kind: places needed and the counter of ausgeschriebene ones. */
+export const STAFFING_FIELDS = {
+  instruktor: {
+    needed: "instruktorenNeeded",
+    ausgeschrieben: "instruktorenAusgeschrieben",
+  },
+  praxisanleiter: {
+    needed: "praxisanleiterNeeded",
+    ausgeschrieben: "praxisanleiterAusgeschrieben",
+  },
+} as const satisfies Record<
+  Kind,
+  { needed: keyof Needed; ausgeschrieben: keyof Staffing }
+>;
+
 export function needed(s: Needed, kind: Kind): number {
-  return kind === "instruktor" ? s.instruktorenNeeded : s.praxisanleiterNeeded;
+  return s[STAFFING_FIELDS[kind].needed];
 }
 
 export function ausgeschrieben(s: Staffing, kind: Kind): number {
-  return kind === "instruktor"
-    ? s.instruktorenAusgeschrieben
-    : s.praxisanleiterAusgeschrieben;
+  return s[STAFFING_FIELDS[kind].ausgeschrieben];
 }
 
 /** How many signups of a kind hold a fixed place at most: the places not ausgeschrieben. */
@@ -266,9 +279,7 @@ export type AusschreibungInput = {
 };
 
 function withAusgeschrieben(s: Staffing, kind: Kind, count: number): Staffing {
-  return kind === "instruktor"
-    ? { ...s, instruktorenAusgeschrieben: count }
-    : { ...s, praxisanleiterAusgeschrieben: count };
+  return { ...s, [STAFFING_FIELDS[kind].ausgeschrieben]: count };
 }
 
 function planRole(

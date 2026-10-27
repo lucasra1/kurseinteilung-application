@@ -31,13 +31,12 @@ import {
   planAusschreibung,
   type RoleSnapshot,
   rankSignups,
+  STAFFING_FIELDS,
   sortByPosition,
   type Triggered,
   triggered,
 } from "@/lib/staffing";
 import { type Warning, warningText } from "@/lib/warning-text";
-
-export type LockedTermin = StaffingTermin;
 
 type SignupRow = {
   terminId: string;
@@ -53,7 +52,7 @@ async function loadTermine(
   tx: Tx,
   ids: string[],
   lock: boolean,
-): Promise<Map<string, LockedTermin>> {
+): Promise<Map<string, StaffingTermin>> {
   if (ids.length === 0) return new Map();
   if (lock) {
     // Lock in a single-table query: Drizzle renders `FOR UPDATE OF` schema-qualified
@@ -106,7 +105,7 @@ async function loadSignups(tx: Tx, ids: string[]): Promise<SignupRow[]> {
 }
 
 function rankedByTermin(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   rows: SignupRow[],
 ) {
   return new Map(
@@ -121,7 +120,7 @@ function rankedByTermin(
 }
 
 function states(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   ranked: ReturnType<typeof rankedByTermin>,
 ): TerminState[] {
   return [...termineById.values()].map((termin) => ({
@@ -174,8 +173,8 @@ function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
 /** `planAusschreibung` for every Termin still there after `run`. */
 function planTermine(
   action: StaffingAction,
-  before: Map<string, LockedTermin>,
-  afterRun: Map<string, LockedTermin>,
+  before: Map<string, StaffingTermin>,
+  afterRun: Map<string, StaffingTermin>,
   signupsBefore: SignupRow[],
   signupsAfter: SignupRow[],
 ): AusschreibungPlan[] {
@@ -255,9 +254,9 @@ async function resolveAufrufe(
 /** Writes the planned counters; returns the Termine with them. */
 async function writeCounters(
   tx: Tx,
-  afterRun: Map<string, LockedTermin>,
+  afterRun: Map<string, StaffingTermin>,
   plans: AusschreibungPlan[],
-): Promise<Map<string, LockedTermin>> {
+): Promise<Map<string, StaffingTermin>> {
   const after = new Map(afterRun);
   for (const plan of plans) {
     const termin = afterRun.get(plan.terminId);
@@ -293,7 +292,7 @@ export type Bestaetigt = boolean | "nie-noetig";
 /** What the triggered roles would do, for the dialog text. */
 function warnings(
   triggers: Triggered[],
-  afterRun: Map<string, LockedTermin>,
+  afterRun: Map<string, StaffingTermin>,
   aufrufe: Aufruf<AufrufRecipient>[],
 ): Warning[] {
   return triggers.flatMap(({ terminId, kind, trigger }): Warning[] => {
@@ -342,10 +341,10 @@ export async function mutateStaffing<T>(opts: {
   /** See `Bestaetigt`. */
   bestaetigt: Bestaetigt;
   terminIds: (tx: Tx) => Promise<string[]>;
-  run: (tx: Tx, termine: Map<string, LockedTermin>) => Promise<T>;
+  run: (tx: Tx, termine: Map<string, StaffingTermin>) => Promise<T>;
 }): Promise<T> {
   const { action } = opts;
-  const out = await db.transaction(async (tx) => {
+  const committed = await db.transaction(async (tx) => {
     const ids = [...new Set(await opts.terminIds(tx))].sort();
     const before = await loadTermine(tx, ids, true);
     const signupsBefore = await loadSignups(tx, ids);
@@ -422,52 +421,53 @@ export async function mutateStaffing<T>(opts: {
     };
   });
 
-  const enriched: StaffingChange[] = out.changes.flatMap((change) => {
+  const enriched: StaffingChange[] = committed.changes.flatMap((change) => {
     const termin =
-      out.after.get(change.terminId) ?? out.before.get(change.terminId);
-    const person = out.people.get(change.profileId);
+      committed.after.get(change.terminId) ??
+      committed.before.get(change.terminId);
+    const person = committed.people.get(change.profileId);
     if (!termin || !person) return [];
     if (isPastDate(termin.date)) return [];
-    if (!out.existingProfileIds.has(change.profileId)) return [];
+    if (!committed.existingProfileIds.has(change.profileId)) return [];
     return [{ ...change, termin, person }];
   });
 
   // The rule never triggers on past Termine, and recipients are on the Termin afterwards.
-  const platzFrei: PlaceMail[] = triggered(out.plans).flatMap(
+  const platzFrei: PlaceMail[] = triggered(committed.plans).flatMap(
     ({ terminId, kind, trigger }) => {
-      const termin = out.after.get(terminId);
+      const termin = committed.after.get(terminId);
       if (trigger.type !== "backups" || !termin) return [];
       const recipients = trigger.recipients.flatMap((id) => {
-        const person = out.people.get(id);
+        const person = committed.people.get(id);
         return person ? [person] : [];
       });
       return [{ termin, kind, places: trigger.places, recipients }];
     },
   );
 
-  const gebraucht: PlaceMail[] = out.aufrufe.flatMap(
+  const gebraucht: PlaceMail[] = committed.aufrufe.flatMap(
     ({ terminId, recipients, ...aufruf }) => {
-      const termin = out.after.get(terminId);
+      const termin = committed.after.get(terminId);
       return termin ? [{ termin, recipients, ...aufruf }] : [];
     },
   );
 
   await sendStaffingNotifications({
     actor: action.actor,
-    entries: out.entries,
-    after: out.afterStates,
+    entries: committed.entries,
+    after: committed.afterStates,
     changes: enriched,
     platzFrei,
     gebraucht,
   });
-  return out.result;
+  return committed.result;
 }
 
 /** The locked Termin for `id`, or `nicht-gefunden`. */
 export function lockedTermin(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   id: string,
-): LockedTermin {
+): StaffingTermin {
   const termin = termineById.get(id);
   if (!termin) throw new DomainError("nicht-gefunden");
   return termin;
@@ -480,7 +480,7 @@ export function lockedTermin(
  */
 export async function appendSignup(
   tx: Tx,
-  termin: LockedTermin,
+  termin: StaffingTermin,
   profileId: string,
   kind: Kind,
 ): Promise<void> {
@@ -538,7 +538,7 @@ async function signupsInOrder(tx: Tx, terminId: string) {
  */
 async function takeAusgeschriebenPlace(
   tx: Tx,
-  termin: LockedTermin,
+  termin: StaffingTermin,
   profileId: string,
   kind: Kind,
 ): Promise<void> {
@@ -560,17 +560,10 @@ async function takeAusgeschriebenPlace(
       .set({ position: index + 1 })
       .where(eq(signups.id, row.id));
   }
+  const counter = STAFFING_FIELDS[kind].ausgeschrieben;
   await tx
     .update(termine)
-    .set(
-      kind === "instruktor"
-        ? {
-            instruktorenAusgeschrieben: sql`${termine.instruktorenAusgeschrieben} - 1`,
-          }
-        : {
-            praxisanleiterAusgeschrieben: sql`${termine.praxisanleiterAusgeschrieben} - 1`,
-          },
-    )
+    .set({ [counter]: sql`${termine[counter]} - 1` })
     .where(eq(termine.id, termin.id));
 }
 
@@ -582,7 +575,7 @@ async function takeAusgeschriebenPlace(
  */
 export async function claimAusgeschriebenPlace(
   tx: Tx,
-  termin: LockedTermin,
+  termin: StaffingTermin,
   profileId: string,
 ): Promise<void> {
   const ranked = rankSignups(await signupsInOrder(tx, termin.id), termin);
