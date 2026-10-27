@@ -110,6 +110,28 @@ export async function adminRemoveSignup(
   });
 }
 
+/**
+ * "Platz geben": a coordinator gives a backup an ausgeschriebenen place of their role, with
+ * the same result as Platz übernehmen.
+ */
+export async function adminGivePlace(
+  terminId: string,
+  profileId: string,
+): Promise<void> {
+  const admin = await requireAdmin();
+  await mutateStaffing({
+    action: {
+      type: "signup.place_given",
+      actor: admin,
+      target: { terminId, profileId },
+    },
+    terminIds: async () => [terminId],
+    run: async (tx, termine) => {
+      await claimHeldPlace(tx, lockedTermin(termine, terminId), profileId);
+    },
+  });
+}
+
 /** Swaps a person with their neighbor of the same kind in signup order; does nothing at either end. */
 export async function adminMoveSignup(
   terminId: string,

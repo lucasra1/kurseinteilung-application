@@ -6,6 +6,7 @@ import { SignupCta } from "@/components/signup-cta";
 import { SkeletonList } from "@/components/skeleton-list";
 import {
   Avatar,
+  CLAIM_LABEL,
   FestgeschriebenChip,
   kursLabel,
   RoleChip,
@@ -21,7 +22,7 @@ import {
   type TerminView,
 } from "@/lib/dal/read-model";
 import { formatDaysUntil, formatLongDate, formatTimeRange } from "@/lib/dates";
-import { isBackup } from "@/lib/staffing";
+import { canClaimPlace, isBackup } from "@/lib/staffing";
 import { firstParam, hrefWith } from "@/lib/url";
 
 export default function MeinePage({ searchParams }: PageProps<"/meine">) {
@@ -148,6 +149,7 @@ function NextTermin({
   const others = termin.signups.filter((s) => s.profileId !== currentUserId);
   const team = others.filter((s) => !isBackup(s.role));
   const backups = others.filter((s) => isBackup(s.role));
+  const claimable = canClaimPlace(termin, me.profileId);
   const names = (list: typeof others) =>
     new Intl.ListFormat("de", { type: "conjunction" }).format(
       list.map((p) => p.fullName),
@@ -201,11 +203,14 @@ function NextTermin({
         </div>
       )}
       <div className="grid gap-2 sm:grid-cols-2">
+        {/* The panel has "Platz übernehmen" as its main action. */}
         <Link
           href={detailsHref}
-          className={buttonVariants({ variant: "outline" })}
+          className={buttonVariants({
+            variant: claimable ? "default" : "outline",
+          })}
         >
-          Details
+          {claimable ? CLAIM_LABEL : "Details"}
         </Link>
         <SignupCta terminId={termin.id} mode="austragen" />
       </div>

@@ -620,6 +620,25 @@ describe("auditSentence for Ausschreibung", () => {
     ).toBe("Ben Maier hat den Platz übernommen (Backup → Instruktor)");
   });
 
+  it("says which coordinator gave whom the place", () => {
+    expect(
+      auditSentence(
+        event(LEA, {
+          type: "signup.place_given",
+          profileId: BEN.id,
+          data: {
+            termin,
+            personName: BEN.name,
+            from: "backup-praxisanleiter",
+            to: "praxisanleiter",
+          },
+        }),
+      ),
+    ).toBe(
+      "Lea Berger hat Ben Maier den Platz gegeben (Backup → Praxisanleiter)",
+    );
+  });
+
   it("keeps the action's own entry on top, whatever order the entries come back in", () => {
     const removed = event(ANNA, {
       type: "signup.removed",

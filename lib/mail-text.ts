@@ -135,6 +135,8 @@ function subject(main: AuditEntry, termin: TerminSnapshot, actor: Actor) {
       return `Eintragung: ${at}`;
     case "signup.claimed":
       return `Platz übernommen: ${at}`;
+    case "signup.place_given":
+      return `Platz gegeben: ${at}`;
     case "signup.removed":
       return main.profileId === actor.id
         ? `Abmeldung: ${at}`

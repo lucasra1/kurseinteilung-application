@@ -113,6 +113,10 @@ export function auditSentence(event: AuditEvent): string {
       const { from, to } = event.data;
       return `${actor} hat den Platz übernommen${roleSuffix(from, to)}`;
     }
+    case "signup.place_given": {
+      const { personName, from, to } = event.data;
+      return `${actor} hat ${whom(event, personName)} den Platz gegeben${roleSuffix(from, to)}`;
+    }
     case "place.ausgeschrieben": {
       const { kind, places, angeschrieben } = event.data;
       const held = `${placesLabel(places, kind)} ausgeschrieben`;

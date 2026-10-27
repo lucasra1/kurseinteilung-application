@@ -11,6 +11,7 @@ import type { SignupView, TerminView } from "@/lib/dal/read-model";
 import { formatLongDate, formatTimeRange } from "@/lib/dates";
 import {
   ausgeschrieben,
+  canClaimPlace,
   fixedPlaces,
   hasQualification,
   isBackup,
@@ -114,7 +115,7 @@ function cta(
   }
   if (mine) {
     const held = ausgeschrieben(termin, mine.kind);
-    if (isBackup(mine.role) && held > 0) {
+    if (canClaimPlace(termin, mine.profileId)) {
       return {
         terminId,
         mode: "uebernehmen",

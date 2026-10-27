@@ -8,6 +8,7 @@ import { terminHistory } from "@/lib/dal/audit";
 import { setFestgeschrieben } from "@/lib/dal/kurse";
 import {
   adminAddSignup,
+  adminGivePlace,
   adminMoveSignup,
   adminRemoveSignup,
   claimPlace,
@@ -73,6 +74,20 @@ export async function removeSignupAction(
     );
     await adminRemoveSignup(terminId, profileId);
     return "Ausgetragen.";
+  });
+}
+
+/** "Platz geben" in the coordinator panel. */
+export async function givePlaceAction(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const { terminId, profileId } = adminSignupForm.parse(
+      Object.fromEntries(formData),
+    );
+    await adminGivePlace(terminId, profileId);
+    return "Platz gegeben.";
   });
 }
 

@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   aufrufe,
+  canClaimPlace,
   festschreibungMessage,
   isFestgeschrieben,
   type Kind,
   missingPlaces,
+  needsViewer,
   nextRole,
   planAusschreibung,
   type RolePlan,
   rankSignups,
   type Staffing,
+  staffingLabel,
   triggered,
 } from "@/lib/staffing";
 
@@ -96,11 +99,111 @@ describe("rankSignups", () => {
     });
   });
 
+  it("labels a Termin with a held place as missing someone, though enough are signed up", () => {
+    // Status chip, "Braucht Leute" and the stat cards all read `missingPlaces`.
+    const s = staffing(2, 1);
+    const ranked = rankSignups(inOrder("anna", "ben"), s);
+    expect(staffingLabel(missingPlaces(ranked, s))).toBe("1 Instruktor fehlt");
+  });
+
   it("gives the next person signing up a fixed place while one is ausgeschrieben", () => {
     const next = (s: Staffing) =>
       nextRole(rankSignups(inOrder("anna", "ben"), s), s, "instruktor");
     expect(next(staffing(2, 1))).toBe("instruktor");
     expect(next(staffing(2))).toBe("backup-instruktor");
+  });
+});
+
+describe("canClaimPlace", () => {
+  /** A Termin with 1 Instruktor and 1 Praxisanleiter needed; `held` places ausgeschrieben per kind. */
+  function termin(
+    held: { instruktor?: number; praxisanleiter?: number },
+    ...people: Array<string | [string, Kind]>
+  ) {
+    const s: Staffing = {
+      instruktorenNeeded: 1,
+      praxisanleiterNeeded: 1,
+      instruktorenAusgeschrieben: held.instruktor ?? 0,
+      praxisanleiterAusgeschrieben: held.praxisanleiter ?? 0,
+    };
+    return { ...s, signups: rankSignups(inOrder(...people), s) };
+  }
+
+  it("lets a backup of a role with an ausgeschriebenen place take it", () => {
+    expect(
+      canClaimPlace(termin({ instruktor: 1 }, "ben", "clara"), "clara"),
+    ).toBe(true);
+  });
+
+  it("is false while no place of the role is ausgeschrieben", () => {
+    expect(canClaimPlace(termin({}, "anna", "ben"), "ben")).toBe(false);
+  });
+
+  it("is false for a backup of the other role", () => {
+    expect(
+      canClaimPlace(
+        termin({ praxisanleiter: 1 }, "anna", "ben", [
+          "clara",
+          "praxisanleiter",
+        ]),
+        "ben",
+      ),
+    ).toBe(false);
+  });
+
+  it("is false for someone with a fixed place and for someone not on the Termin", () => {
+    const t = termin({ instruktor: 1 }, ["anna", "praxisanleiter"], "ben");
+    expect(canClaimPlace(t, "anna")).toBe(false);
+    expect(canClaimPlace(t, "dora")).toBe(false);
+  });
+});
+
+describe("needsViewer (Wo du gebraucht wirst)", () => {
+  const instruktor = {
+    id: "dora",
+    isInstruktor: true,
+    isPraxisanleiter: false,
+  };
+
+  function termin(
+    s: Partial<Staffing>,
+    ...people: Array<string | [string, Kind]>
+  ) {
+    const full: Staffing = { ...staffing(0), ...s };
+    return { ...full, signups: rankSignups(inOrder(...people), full) };
+  }
+
+  it("shows a Termin with a free fixed place of a role the viewer is qualified for", () => {
+    expect(
+      needsViewer(termin({ instruktorenNeeded: 2 }, "anna"), instruktor),
+    ).toBe(true);
+  });
+
+  it("hides a Termin whose free places are all of another role", () => {
+    expect(
+      needsViewer(
+        termin({ instruktorenNeeded: 1, praxisanleiterNeeded: 1 }, "anna"),
+        instruktor,
+      ),
+    ).toBe(false);
+  });
+
+  it("hides a Termin the viewer is already on, free places or not", () => {
+    expect(
+      needsViewer(termin({ instruktorenNeeded: 2 }, "dora"), instruktor),
+    ).toBe(false);
+  });
+
+  it("shows a Termin where the viewer is a backup of a role with an ausgeschriebenen place", () => {
+    const held = termin(
+      { instruktorenNeeded: 1, instruktorenAusgeschrieben: 1 },
+      "ben",
+      "dora",
+    );
+    expect(needsViewer(held, instruktor)).toBe(true);
+    expect(
+      needsViewer(termin({ instruktorenNeeded: 1 }, "ben", "dora"), instruktor),
+    ).toBe(false);
   });
 });
 

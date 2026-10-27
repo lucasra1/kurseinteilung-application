@@ -636,6 +636,15 @@ describe("explicitlyPlaced", () => {
     expect(explicitlyPlaced(action, onTermin)).toEqual(new Set([BEN.id]));
   });
 
+  it("is the person given the place for Platz geben, not the coordinator", () => {
+    const action = {
+      type: "signup.place_given",
+      actor: LEA,
+      target: { terminId: "t1", profileId: BEN.id },
+    } as const;
+    expect(explicitlyPlaced(action, onTermin)).toEqual(new Set([BEN.id]));
+  });
+
   it("is everyone on the Termin for ↑/↓: a swap never counts as moving up", () => {
     const action = {
       type: "signup.moved",
@@ -815,6 +824,43 @@ describe("staffingEvents for Ausschreibung", () => {
         data: {
           termin: T1_SNAPSHOT,
           personName: "Ben Maier",
+          from: "backup-instruktor",
+          to: "instruktor",
+        },
+      },
+    ]);
+  });
+
+  it("writes Platz geben as the role change of the person given the place, not of the coordinator", () => {
+    const events = staffingEvents({
+      action: {
+        type: "signup.place_given",
+        actor: LEA,
+        target: { terminId: "t1", profileId: CLARA.id },
+      },
+      before: [
+        state({ ...T1, instruktorenAusgeschrieben: 1 }, [
+          signup(BEN, "instruktor", 1, "backup-instruktor"),
+          signup(CLARA, "instruktor", 2, "backup-instruktor"),
+        ]),
+      ],
+      after: [
+        state(T1, [
+          signup(CLARA, "instruktor", 1, "instruktor"),
+          signup(BEN, "instruktor", 2, "backup-instruktor"),
+        ]),
+      ],
+    });
+
+    expect(events).toEqual([
+      {
+        type: "signup.place_given",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: CLARA.id,
+        data: {
+          termin: T1_SNAPSHOT,
+          personName: "Clara Ott",
           from: "backup-instruktor",
           to: "instruktor",
         },

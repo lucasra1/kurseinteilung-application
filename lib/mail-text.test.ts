@@ -479,6 +479,33 @@ describe("coordinatorMail for Ausschreibung", () => {
         "Kurseinteilung",
     });
   });
+
+  it("tells the other coordinators who gave whom the place", () => {
+    expect(
+      mail(
+        {
+          type: "signup.place_given",
+          actor: LEA,
+          target: { terminId: "t1", profileId: CLARA.id },
+        },
+        after,
+        [
+          state(T1F, [
+            signup(CLARA, "instruktor", 1, "instruktor"),
+            signup(BEN, "instruktor", 2, "backup-instruktor"),
+          ]),
+        ],
+      ),
+    ).toEqual({
+      subject: "Platz gegeben: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      text:
+        "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
+        "Lea Berger hat Clara Ott den Platz gegeben (Backup → Instruktor).\n" +
+        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1, 1 Backup.\n" +
+        "https://kurse.example.org/termine?termin=t1\n\n" +
+        "Kurseinteilung",
+    });
+  });
 });
 
 describe("coordinatorMail for Aufruf", () => {
