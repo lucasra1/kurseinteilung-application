@@ -2,6 +2,7 @@ import { ChevronDown, Lock, Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { removeTermin } from "@/app/(app)/kurse/actions";
 import {
+  givePlaceAction,
   moreTerminHistory,
   removeSignupAction,
 } from "@/app/(app)/termine/actions";
@@ -18,6 +19,9 @@ import { buttonVariants } from "@/components/ui/button";
 import type { AdminSignupView, TerminView } from "@/lib/dal/read-model";
 import { formatDate, formatTimeRange } from "@/lib/dates";
 import {
+  ausgeschrieben,
+  canClaimPlace,
+  fixedPlaces,
   hasQualification,
   isBackup,
   KIND_LABEL,
@@ -171,7 +175,9 @@ function KindSection({
   const fixed = ofKind.filter((s) => !isBackup(s.role));
   const backups = ofKind.filter((s) => isBackup(s.role));
   const total = needed(termin, kind);
-  const free = termin.missing[kind];
+  // Missing places are held ones (ausgeschrieben) first, then plain free ones.
+  const held = ausgeschrieben(termin, kind);
+  const free = Math.max(0, termin.missing[kind] - held);
 
   return (
     <section className="flex flex-col gap-1.5">
@@ -191,14 +197,26 @@ function KindSection({
             isLast={signup.rank === ofKind.length}
           />
         ))}
-        {Array.from({ length: free }, (_, i) => (
+        {Array.from({ length: held }, (_, i) => (
           <li
-            // biome-ignore lint/suspicious/noArrayIndexKey: one row per free place
-            key={i}
-            className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
+            // biome-ignore lint/suspicious/noArrayIndexKey: one row per held place
+            key={`held-${i}`}
+            className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-brand-200 bg-brand-50 px-2.5 text-sm font-medium text-brand-700"
           >
             <span className="w-5 shrink-0 text-[13px] font-semibold">
               {fixed.length + i + 1}
+            </span>
+            Ausgeschrieben
+          </li>
+        ))}
+        {Array.from({ length: free }, (_, i) => (
+          <li
+            // biome-ignore lint/suspicious/noArrayIndexKey: one row per free place
+            key={`free-${i}`}
+            className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
+          >
+            <span className="w-5 shrink-0 text-[13px] font-semibold">
+              {fixed.length + held + i + 1}
             </span>
             Freier Platz
           </li>
@@ -215,7 +233,7 @@ function KindSection({
                 key={signup.profileId}
                 termin={termin}
                 signup={signup}
-                label={`B${signup.rank - total}`}
+                label={`B${signup.rank - fixedPlaces(termin, kind)}`}
                 isLast={signup.rank === ofKind.length}
               />
             ))}
@@ -258,6 +276,20 @@ function SignupRow({
             </>
           )}
         </span>
+        {canClaimPlace(termin, signup.profileId) && (
+          <div className="mt-1.5">
+            <ConfirmDialog
+              triggerLabel="Platz geben"
+              triggerSize="sm"
+              destructive={false}
+              title={`${signup.fullName} den Platz geben?`}
+              description={`${signup.fullName} wird ${KIND_LABEL[signup.kind].one} und bekommt eine E-Mail.`}
+              confirmLabel="Platz geben"
+              action={givePlaceAction}
+              fields={{ terminId: termin.id, profileId: signup.profileId }}
+            />
+          </div>
+        )}
       </div>
       <MoveButtons
         terminId={termin.id}

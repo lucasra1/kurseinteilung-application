@@ -70,6 +70,8 @@ export type AuditData = {
   "signup.role_changed": { termin: TerminSnapshot } & RoleShift;
   /** A backup took an ausgeschriebenen place (Backup → role). */
   "signup.claimed": { termin: TerminSnapshot } & RoleShift;
+  /** A coordinator gave a backup an ausgeschriebenen place (Backup → role). */
+  "signup.place_given": { termin: TerminSnapshot } & RoleShift;
   /**
    * A consequence: `places` of `kind` held for the backups; `angeschrieben` are the names of
    * those who got "Platz frei".
@@ -170,7 +172,11 @@ export type AuditEvent = {
  */
 export type StaffingAction = { actor: Actor } & (
   | {
-      type: "signup.created" | "signup.removed" | "signup.claimed";
+      type:
+        | "signup.created"
+        | "signup.removed"
+        | "signup.claimed"
+        | "signup.place_given";
       target: { terminId: string; profileId: string };
     }
   | {
@@ -197,6 +203,7 @@ export function explicitlyPlaced(
 ): Set<string> {
   switch (action.type) {
     case "signup.claimed":
+    case "signup.place_given":
       return new Set([action.target.profileId]);
     // A swap across the backup line is deliberate, whoever it lifts.
     case "signup.moved":
@@ -377,6 +384,7 @@ function mainEntry(
     case "signup.created":
     case "signup.removed":
     case "signup.claimed":
+    case "signup.place_given":
     case "person.removed": {
       const { profileId } = action.target;
       const data = { termin, ...on.shift(profileId) };
