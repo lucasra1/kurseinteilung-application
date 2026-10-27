@@ -1,6 +1,12 @@
 import "server-only";
 import { eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
+import {
+  kursCreatedEvents,
+  kursUpdatedEvents,
+  terminCreatedEvent,
+} from "@/lib/audit";
+import { logEvents } from "@/lib/dal/audit";
 import { requireAdmin } from "@/lib/dal/auth";
 import { lockedTermin, mutateStaffing } from "@/lib/dal/staffing-tx";
 import { todayInVienna } from "@/lib/dates";
@@ -25,30 +31,41 @@ export async function createKursWithTermine(
   input: KursInput,
   termineInput: TerminInput[],
 ): Promise<string> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   return db.transaction(async (tx) => {
-    const [row] = await tx
+    const [kurs] = await tx
       .insert(kurse)
       .values(input)
-      .returning({ id: kurse.id });
-    if (termineInput.length > 0) {
-      await tx
-        .insert(termine)
-        .values(termineInput.map((termin) => ({ ...termin, kursId: row.id })));
-    }
-    return row.id;
+      .returning({ id: kurse.id, title: kurse.title });
+    const created =
+      termineInput.length > 0
+        ? await tx
+            .insert(termine)
+            .values(
+              termineInput.map((termin) => ({ ...termin, kursId: kurs.id })),
+            )
+            .returning()
+        : [];
+    await logEvents(tx, admin, kursCreatedEvents(kurs, created));
+    return kurs.id;
   });
 }
 
-/** Title and description don't affect roles: a plain update. */
+/** Title and description don't affect roles: a plain update. Unchanged, it writes nothing. */
 export async function updateKurs(id: string, input: KursInput): Promise<void> {
-  await requireAdmin();
-  const [updated] = await db
-    .update(kurse)
-    .set(input)
-    .where(eq(kurse.id, id))
-    .returning({ id: kurse.id });
-  if (!updated) throw new DomainError("nicht-gefunden");
+  const admin = await requireAdmin();
+  await db.transaction(async (tx) => {
+    const [was] = await tx
+      .select({ title: kurse.title, description: kurse.description })
+      .from(kurse)
+      .where(eq(kurse.id, id))
+      .for("update");
+    if (!was) throw new DomainError("nicht-gefunden");
+    const entries = kursUpdatedEvents(id, was, input);
+    if (entries.length === 0) return;
+    await tx.update(kurse).set(input).where(eq(kurse.id, id));
+    await logEvents(tx, admin, entries);
+  });
 }
 
 export async function deleteKurs(id: string): Promise<void> {
@@ -70,13 +87,19 @@ export async function createTermin(
   kursId: string,
   input: TerminInput,
 ): Promise<void> {
-  await requireAdmin();
-  const [kurs] = await db
-    .select({ id: kurse.id })
-    .from(kurse)
-    .where(eq(kurse.id, kursId));
-  if (!kurs) throw new DomainError("nicht-gefunden");
-  await db.insert(termine).values({ ...input, kursId });
+  const admin = await requireAdmin();
+  await db.transaction(async (tx) => {
+    const [kurs] = await tx
+      .select({ title: kurse.title })
+      .from(kurse)
+      .where(eq(kurse.id, kursId));
+    if (!kurs) throw new DomainError("nicht-gefunden");
+    const [created] = await tx
+      .insert(termine)
+      .values({ ...input, kursId })
+      .returning();
+    await logEvents(tx, admin, [terminCreatedEvent(kurs.title, created)]);
+  });
 }
 
 /** The staffing numbers decide who holds a fixed place, so this goes through mutateStaffing. */

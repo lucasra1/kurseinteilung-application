@@ -11,7 +11,7 @@
  * `data` is a snapshot of what a reader needs later, since the Termin, Kurs or person may
  * be gone by then. It never contains e-mail addresses or phone numbers.
  */
-import type { Kind, Role } from "@/lib/staffing";
+import type { Kind, Qualifications, Role } from "@/lib/staffing";
 
 /** Who did something. `CurrentUser` fits. */
 export type Actor = { id: string; fullName: string };
@@ -72,7 +72,38 @@ export type AuditData = {
   "kurs.deleted": { kursTitle: string; termin?: TerminSnapshot };
   /** One per Termin the person was on; without `termin` (and roles null) if none. */
   "person.removed": { termin?: TerminSnapshot } & RoleShift;
+  /** Shares its action with a `termin.created` per Termin created with the Kurs. */
+  "kurs.created": { kursTitle: string };
+  /** `kursTitle` is the title after the change. */
+  "kurs.updated": { kursTitle: string; changes: KursChanges };
+  "termin.created": { termin: TerminSnapshot };
+  /** The person registering is the actor. */
+  "person.registered": {
+    personName: string;
+    via: "einladung" | "admin-emails";
+  } & Qualifications;
+  /** By the person themselves; `personName` is the name after the change. */
+  "person.updated": { personName: string; changes: PersonChanges };
+  "person.qualification_changed": {
+    personName: string;
+    kind: Kind;
+    granted: boolean;
+  };
+  /** Praxisanleiterkoordinator:in (`isAdmin`) given or taken. */
+  "person.koordination_changed": { personName: string; granted: boolean };
 };
+
+/** The profile fields a person edits themselves. */
+export type PersonFields = { fullName: string; phone: string | null };
+
+/** The name old → new; for the phone only that it changed, never the number. */
+export type PersonChanges = { fullName?: [string, string]; phone?: true };
+
+/** The Kurs fields an admin edits. */
+export type KursFields = { title: string; description: string };
+
+/** `{ field: [old, new] }` for every changed Kurs field. */
+export type KursChanges = Partial<Record<keyof KursFields, [string, string]>>;
 
 export type AuditType = keyof AuditData;
 
@@ -303,4 +334,87 @@ function mainEntry(
         data: { kursTitle: termin.kursTitle, termin },
       };
   }
+}
+
+/** A Termin row as just inserted. */
+export type CreatedTermin = Omit<TerminSnapshot, "kursTitle"> & {
+  id: string;
+  kursId: string;
+};
+
+/** `termin.created` for a Termin of the Kurs titled `kursTitle`. */
+export function terminCreatedEvent(
+  kursTitle: string,
+  termin: CreatedTermin,
+): AuditEntry {
+  const { id, kursId, topic, date, startTime, endTime } = termin;
+  return {
+    type: "termin.created",
+    terminId: id,
+    kursId,
+    profileId: null,
+    data: { termin: { kursTitle, topic, date, startTime, endTime } },
+  };
+}
+
+/** `kurs.created` and a `termin.created` per Termin created with it. */
+export function kursCreatedEvents(
+  kurs: { id: string; title: string },
+  termine: CreatedTermin[],
+): AuditEntry[] {
+  return [
+    {
+      type: "kurs.created",
+      terminId: null,
+      kursId: kurs.id,
+      profileId: null,
+      data: { kursTitle: kurs.title },
+    },
+    ...termine.map((termin) => terminCreatedEvent(kurs.title, termin)),
+  ];
+}
+
+/** `kurs.updated` with old → new per changed field; nothing if no field changed. */
+export function kursUpdatedEvents(
+  kursId: string,
+  was: KursFields,
+  now: KursFields,
+): AuditEntry[] {
+  const changes: KursChanges = {};
+  for (const field of ["title", "description"] as const) {
+    if (was[field] !== now[field]) changes[field] = [was[field], now[field]];
+  }
+  if (Object.keys(changes).length === 0) return [];
+  return [
+    {
+      type: "kurs.updated",
+      terminId: null,
+      kursId,
+      profileId: null,
+      data: { kursTitle: now.title, changes },
+    },
+  ];
+}
+
+/** `person.updated` for a changed name or phone; nothing if neither changed. */
+export function personUpdatedEvents(
+  profileId: string,
+  was: PersonFields,
+  now: PersonFields,
+): AuditEntry[] {
+  const changes: PersonChanges = {};
+  if (was.fullName !== now.fullName) {
+    changes.fullName = [was.fullName, now.fullName];
+  }
+  if (was.phone !== now.phone) changes.phone = true;
+  if (Object.keys(changes).length === 0) return [];
+  return [
+    {
+      type: "person.updated",
+      terminId: null,
+      kursId: null,
+      profileId,
+      data: { personName: now.fullName, changes },
+    },
+  ];
 }

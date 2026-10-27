@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AuditEvent, TerminSnapshot } from "@/lib/audit";
+import type { AuditEvent, PersonChanges, TerminSnapshot } from "@/lib/audit";
 import {
   auditSentence,
   formatAuditTime,
@@ -262,6 +262,267 @@ describe("formatAuditTime", () => {
     expect(formatAuditTime(new Date("2026-07-04T12:30:00Z"))).toBe(
       "Sa., 04.07., 14:30",
     );
+  });
+});
+
+describe("auditSentence for Kurse and Termine", () => {
+  it("names the created Kurs; a created Termin is named by its context", () => {
+    expect(
+      auditSentence(
+        event(LEA, {
+          type: "kurs.created",
+          data: { kursTitle: "Erste Hilfe Grundkurs" },
+        }),
+      ),
+    ).toBe("Lea Berger hat den Kurs „Erste Hilfe Grundkurs“ angelegt");
+    expect(
+      auditSentence(event(LEA, { type: "termin.created", data: { termin } })),
+    ).toBe("Lea Berger hat den Termin angelegt");
+  });
+
+  it("lists the changed Kurs fields old → new", () => {
+    expect(
+      auditSentence(
+        event(LEA, {
+          type: "kurs.updated",
+          data: {
+            kursTitle: "Erste Hilfe Grundkurs",
+            changes: {
+              title: ["Erste Hilfe", "Erste Hilfe Grundkurs"],
+              description: ["", "Für alle im Betrieb"],
+            },
+          },
+        }),
+      ),
+    ).toBe(
+      "Lea Berger hat den Kurs „Erste Hilfe Grundkurs“ geändert (Titel „Erste Hilfe“ → „Erste Hilfe Grundkurs“, Beschreibung – → „Für alle im Betrieb“)",
+    );
+  });
+
+  it("shortens a long description at a word", () => {
+    expect(
+      auditSentence(
+        event(LEA, {
+          type: "kurs.updated",
+          data: {
+            kursTitle: "Erste Hilfe Grundkurs",
+            changes: {
+              description: [
+                "Für alle, die im Betrieb Erste Hilfe leisten wollen und dafür\neine Auffrischung brauchen.",
+                "Kurz",
+              ],
+            },
+          },
+        }),
+      ),
+    ).toBe(
+      "Lea Berger hat den Kurs „Erste Hilfe Grundkurs“ geändert (Beschreibung „Für alle, die im Betrieb Erste Hilfe leisten…“ → „Kurz“)",
+    );
+  });
+});
+
+describe("auditSentence for Personen", () => {
+  it("says how someone registered", () => {
+    expect(
+      auditSentence(
+        event(ANNA, {
+          type: "person.registered",
+          profileId: ANNA.id,
+          data: {
+            personName: ANNA.name,
+            via: "einladung",
+            isInstruktor: true,
+            isPraxisanleiter: true,
+          },
+        }),
+      ),
+    ).toBe(
+      "Anna Huber hat sich mit dem Einladungslink registriert (Instruktor, Praxisanleiter)",
+    );
+    expect(
+      auditSentence(
+        event(
+          { id: "lea", name: "lea.berger" },
+          {
+            type: "person.registered",
+            profileId: "lea",
+            data: {
+              personName: "lea.berger",
+              via: "admin-emails",
+              isInstruktor: false,
+              isPraxisanleiter: false,
+            },
+          },
+        ),
+      ),
+    ).toBe(
+      "lea.berger hat sich registriert (fix als Praxisanleiterkoordinator:in eingetragen)",
+    );
+  });
+
+  it("shows the name old → new but only that the phone changed", () => {
+    const updated = (changes: PersonChanges) =>
+      auditSentence(
+        event(ANNA, {
+          type: "person.updated",
+          profileId: ANNA.id,
+          data: { personName: "Anna Maier", changes },
+        }),
+      );
+    expect(
+      updated({ fullName: ["Anna Huber", "Anna Maier"], phone: true }),
+    ).toBe(
+      "Anna Huber hat das Profil geändert (Name Anna Huber → Anna Maier, Telefon geändert)",
+    );
+    expect(updated({ phone: true })).toBe(
+      "Anna Huber hat das Profil geändert (Telefon geändert)",
+    );
+  });
+
+  it("says who gave or took a qualification", () => {
+    const changed = (actor: typeof LEA, granted: boolean) =>
+      auditSentence(
+        event(actor, {
+          type: "person.qualification_changed",
+          profileId: ANNA.id,
+          data: { personName: ANNA.name, kind: "praxisanleiter", granted },
+        }),
+      );
+    expect(changed(LEA, true)).toBe(
+      "Lea Berger hat Anna Huber die Qualifikation Praxisanleiter gegeben",
+    );
+    expect(changed(LEA, false)).toBe(
+      "Lea Berger hat Anna Huber die Qualifikation Praxisanleiter entzogen",
+    );
+    expect(changed(ANNA, true)).toBe(
+      "Anna Huber hat sich die Qualifikation Praxisanleiter gegeben",
+    );
+  });
+
+  it("says who made someone Praxisanleiterkoordinator:in or not", () => {
+    const changed = (granted: boolean) =>
+      auditSentence(
+        event(LEA, {
+          type: "person.koordination_changed",
+          profileId: ANNA.id,
+          data: { personName: ANNA.name, granted },
+        }),
+      );
+    expect(changed(true)).toBe(
+      "Lea Berger hat Anna Huber die Rolle Praxisanleiterkoordinator:in gegeben",
+    );
+    expect(changed(false)).toBe(
+      "Lea Berger hat Anna Huber die Rolle Praxisanleiterkoordinator:in entzogen",
+    );
+  });
+});
+
+describe("historyGroups outside a Termin", () => {
+  const tag2: TerminSnapshot = {
+    ...termin,
+    topic: "Tag 2",
+    date: "2026-11-08",
+  };
+
+  it("on the Kurs page, names each Termin and orders an action's Termine by date", () => {
+    const kurs = event(LEA, {
+      type: "kurs.created",
+      data: { kursTitle: "Erste Hilfe Grundkurs" },
+    });
+    const created = (terminId: string, snapshot: TerminSnapshot) => ({
+      ...event(LEA, { type: "termin.created", data: { termin: snapshot } }),
+      terminId,
+    });
+
+    expect(
+      historyGroups(
+        [
+          created("t2", tag2),
+          { ...kurs, terminId: null },
+          created("t1", termin),
+        ],
+        "kurs",
+      ),
+    ).toEqual([
+      {
+        actionId: "a1",
+        time: "Sa., 31.10., 14:05",
+        text: "Lea Berger hat den Kurs „Erste Hilfe Grundkurs“ angelegt",
+        consequences: [],
+      },
+      {
+        actionId: "a1",
+        termin: { id: "t1", label: "Tag 1, Sa., 07.11.2026" },
+        time: "Sa., 31.10., 14:05",
+        text: "Lea Berger hat den Termin angelegt",
+        consequences: [],
+      },
+      {
+        actionId: "a1",
+        termin: { id: "t2", label: "Tag 2, So., 08.11.2026" },
+        time: "Sa., 31.10., 14:05",
+        text: "Lea Berger hat den Termin angelegt",
+        consequences: [],
+      },
+    ]);
+  });
+
+  it("for a person, names Kurs and Termin and keeps consequences with their Termin", () => {
+    const removed = (
+      terminId: string,
+      snapshot: TerminSnapshot,
+      from: Role,
+    ) => ({
+      ...event(LEA, {
+        type: "person.removed",
+        profileId: ANNA.id,
+        data: { termin: snapshot, personName: ANNA.name, from, to: null },
+      }),
+      terminId,
+    });
+    const movedUp = event(LEA, {
+      type: "signup.role_changed",
+      profileId: BEN.id,
+      data: {
+        termin,
+        personName: BEN.name,
+        from: "backup-instruktor",
+        to: "instruktor",
+      },
+    });
+
+    const groups = historyGroups(
+      [
+        removed("t2", tag2, "backup-instruktor"),
+        movedUp,
+        removed("t1", termin, "instruktor"),
+      ],
+      "person",
+    );
+    expect(
+      groups.map(({ termin, text, consequences }) => ({
+        termin,
+        text,
+        consequences,
+      })),
+    ).toEqual([
+      {
+        termin: {
+          id: "t1",
+          label: "Erste Hilfe Grundkurs – Tag 1, Sa., 07.11.2026",
+        },
+        text: "Lea Berger hat Anna Huber entfernt (Instruktor)",
+        consequences: ["Ben Maier rückt als Instruktor nach"],
+      },
+      {
+        termin: {
+          id: "t2",
+          label: "Erste Hilfe Grundkurs – Tag 2, So., 08.11.2026",
+        },
+        text: "Lea Berger hat Anna Huber entfernt (Backup Instruktor)",
+        consequences: [],
+      },
+    ]);
   });
 });
 

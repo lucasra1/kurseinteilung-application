@@ -2,11 +2,14 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { HistoryList } from "@/components/history-list";
 import { SkeletonList } from "@/components/skeleton-list";
 import { TerminColumnHeads } from "@/components/termin-fields";
+import { historyGroups } from "@/lib/audit-text";
+import { kursHistory } from "@/lib/dal/audit";
 import { getAdminKurs } from "@/lib/dal/read-model";
 import { formatTime, nextDay } from "@/lib/dates";
-import { removeKurs } from "../actions";
+import { moreKursHistory, removeKurs } from "../actions";
 import { AddTerminRow } from "./add-termin-row";
 import { KursEditForm } from "./kurs-edit-form";
 import { TerminRowForm } from "./termin-row-form";
@@ -23,8 +26,12 @@ async function KursDetail({
   params,
 }: Pick<PageProps<"/kurse/[id]">, "params">) {
   const { id } = await params;
-  const kurs = await getAdminKurs(id);
+  const [kurs, history] = await Promise.all([
+    getAdminKurs(id),
+    kursHistory(id),
+  ]);
   const last = kurs.termine.at(-1);
+  const groups = historyGroups(history.events, "kurs");
 
   return (
     <div className="flex flex-col gap-5">
@@ -118,6 +125,20 @@ async function KursDetail({
               instruktorenNeeded: String(last?.instruktorenNeeded ?? 1),
               praxisanleiterNeeded: String(last?.praxisanleiterNeeded ?? 0),
             }}
+          />
+        </section>
+
+        <section
+          aria-labelledby="verlauf-heading"
+          className="flex flex-col gap-3.5 rounded-2xl border bg-card p-5"
+        >
+          <h2 id="verlauf-heading" className="text-[17px] font-semibold">
+            Verlauf
+          </h2>
+          <HistoryList
+            key={groups[0]?.actionId ?? "leer"}
+            initial={{ groups, nextCursor: history.nextCursor }}
+            loadMore={moreKursHistory.bind(null, kurs.id)}
           />
         </section>
       </div>

@@ -7,7 +7,15 @@ import {
   type TerminSnapshot,
 } from "@/lib/audit";
 import { formatDate, formatTime } from "@/lib/dates";
-import { isBackup, KIND_LABEL, kindOf, type Role } from "@/lib/staffing";
+import {
+  hasQualification,
+  isBackup,
+  KIND_LABEL,
+  KINDS,
+  kindOf,
+  type Role,
+} from "@/lib/staffing";
+import { COORDINATOR } from "@/lib/wording";
 
 /** "Instruktor", "Backup Praxisanleiter" */
 function roleText(role: Role): string {
@@ -99,7 +107,59 @@ export function auditSentence(event: AuditEvent): string {
     }
     case "signup.role_changed":
       return consequence(event.data);
+    case "kurs.created":
+      return `${actor} hat den Kurs „${event.data.kursTitle}“ angelegt`;
+    // The Termin panel, or the Termin label on the Kurs page, says which Termin.
+    case "termin.created":
+      return `${actor} hat den Termin angelegt`;
+    case "kurs.updated": {
+      const { title, description } = event.data.changes;
+      const changes = [
+        title && `Titel ${title.map(quoted).join(" → ")}`,
+        description && `Beschreibung ${description.map(quoted).join(" → ")}`,
+      ].filter(Boolean);
+      return `${actor} hat den Kurs „${event.data.kursTitle}“ geändert (${changes.join(", ")})`;
+    }
+    case "person.registered": {
+      const { personName, via } = event.data;
+      if (via === "admin-emails") {
+        return `${personName} hat sich registriert (fix als ${COORDINATOR.one} eingetragen)`;
+      }
+      const kinds = KINDS.filter((kind) => hasQualification(event.data, kind));
+      const suffix = kinds.length
+        ? ` (${kinds.map((kind) => KIND_LABEL[kind].one).join(", ")})`
+        : "";
+      return `${personName} hat sich mit dem Einladungslink registriert${suffix}`;
+    }
+    case "person.updated": {
+      const { fullName, phone } = event.data.changes;
+      const changes = [
+        fullName && `Name ${fullName.join(" → ")}`,
+        phone && "Telefon geändert",
+      ].filter(Boolean);
+      return `${actor} hat das Profil geändert (${changes.join(", ")})`;
+    }
+    case "person.qualification_changed": {
+      const { personName, kind, granted } = event.data;
+      return `${actor} hat ${whom(event, personName)} die Qualifikation ${KIND_LABEL[kind].one} ${granted ? "gegeben" : "entzogen"}`;
+    }
+    case "person.koordination_changed": {
+      const { personName, granted } = event.data;
+      return `${actor} hat ${whom(event, personName)} die Rolle ${COORDINATOR.one} ${granted ? "gegeben" : "entzogen"}`;
+    }
   }
+}
+
+const EXCERPT_LENGTH = 50;
+
+/** „text“, cut at a word after about 50 characters; "–" for empty text. */
+function quoted(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (!flat) return "–";
+  if (flat.length <= EXCERPT_LENGTH) return `„${flat}“`;
+  const cut = flat.slice(0, EXCERPT_LENGTH + 1);
+  const end = cut.lastIndexOf(" ");
+  return `„${cut.slice(0, end > 0 ? end : EXCERPT_LENGTH).trimEnd()}…“`;
 }
 
 /** What an action did to someone it didn't target, e.g. "Ben Maier rückt als Instruktor nach". */
@@ -135,31 +195,85 @@ export function formatAuditTime(at: Date): string {
   return `${part.weekday}, ${part.day}.${part.month}., ${part.hour}:${part.minute}`;
 }
 
-/** One action in the Verlauf: its main entry and, indented below, what followed from it. */
+/**
+ * One action in the Verlauf: its main entry and, indented below, what followed from it.
+ * Outside the Termin panel, one group per Termin of the action.
+ */
 export type HistoryGroup = {
   actionId: string;
+  /** Outside the Termin panel: the Termin this part of the action is about. */
+  termin?: { id: string; label: string };
   time: string;
   text: string;
   consequences: string[];
 };
 
-/** Entries (newest first) grouped by action, in the order the actions first appear. */
-export function historyGroups(events: AuditEvent[]): HistoryGroup[] {
-  const byAction = new Map<string, AuditEvent[]>();
-  for (const event of events) {
-    byAction.set(event.actionId, [
-      ...(byAction.get(event.actionId) ?? []),
-      event,
-    ]);
+/** Where a Verlauf is shown: a Termin's panel, a Kurs page, or a person's sheet. */
+export type HistoryScope = "termin" | "kurs" | "person";
+
+function groupBy<K, T>(items: T[], keyOf: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
   }
-  return [...byAction].map(([actionId, entries]) => {
-    const main =
-      entries.find((e) => e.type !== "signup.role_changed") ?? entries[0];
-    return {
-      actionId,
-      time: formatAuditTime(main.createdAt),
-      text: auditSentence(main),
-      consequences: entries.filter((e) => e !== main).map(auditSentence),
-    };
-  });
+  return groups;
+}
+
+function terminOf(event: AuditEvent): TerminSnapshot | undefined {
+  return "termin" in event.data ? event.data.termin : undefined;
+}
+
+/** "Tag 1, Sa., 07.11.2026"; for a person also the Kurs: "Erste Hilfe – Tag 1, …" */
+function terminLabel(termin: TerminSnapshot, scope: HistoryScope): string {
+  const name =
+    scope === "person" ? `${termin.kursTitle} – ${termin.topic}` : termin.topic;
+  return `${name}, ${formatDate(termin.date)}`;
+}
+
+function group(actionId: string, entries: AuditEvent[]): HistoryGroup {
+  const main =
+    entries.find((e) => e.type !== "signup.role_changed") ?? entries[0];
+  return {
+    actionId,
+    time: formatAuditTime(main.createdAt),
+    text: auditSentence(main),
+    consequences: entries.filter((e) => e !== main).map(auditSentence),
+  };
+}
+
+/** An action's entries per Termin: those without a Termin first, then by date and time. */
+function perTermin(entries: AuditEvent[]): AuditEvent[][] {
+  const when = (part: AuditEvent[]) => {
+    const termin = part.map(terminOf).find(Boolean);
+    return termin ? `${termin.date} ${termin.startTime}` : "";
+  };
+  return [...groupBy(entries, (e) => e.terminId).values()].sort((a, b) =>
+    when(a).localeCompare(when(b)),
+  );
+}
+
+/**
+ * Entries (newest first) grouped by action, in the order the actions first appear. Outside
+ * the Termin panel each action is split per Termin, and each part names its Termin.
+ */
+export function historyGroups(
+  events: AuditEvent[],
+  scope: HistoryScope = "termin",
+): HistoryGroup[] {
+  return [...groupBy(events, (e) => e.actionId)].flatMap(
+    ([actionId, entries]) => {
+      if (scope === "termin") return [group(actionId, entries)];
+      return perTermin(entries).map((part) => {
+        const terminId = part[0].terminId;
+        const termin = part.map(terminOf).find(Boolean);
+        return terminId && termin
+          ? {
+              ...group(actionId, part),
+              termin: { id: terminId, label: terminLabel(termin, scope) },
+            }
+          : group(actionId, part);
+      });
+    },
+  );
 }
