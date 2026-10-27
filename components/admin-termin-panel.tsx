@@ -307,7 +307,11 @@ function SignupRow({
         triggerIcon={<X aria-hidden="true" />}
         triggerClassName="text-destructive hover:text-destructive"
         title={`${signup.fullName} austragen?`}
-        description="Die Person wird per E-Mail informiert. Wer dahinter steht, rückt nach."
+        description={
+          termin.festgeschrieben
+            ? "Die Person wird per E-Mail informiert. Der Termin ist festgeschrieben, es rückt niemand automatisch nach."
+            : "Die Person wird per E-Mail informiert. Wer dahinter steht, rückt nach."
+        }
         confirmLabel="Austragen"
         action={removeSignupAction}
         fields={{ terminId: termin.id, profileId: signup.profileId }}

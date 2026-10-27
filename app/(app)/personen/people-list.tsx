@@ -144,7 +144,7 @@ export function PeopleList({
                   triggerLabel={`${person.fullName} entfernen`}
                   triggerIcon={<Trash2 aria-hidden="true" />}
                   title={`${person.fullName} entfernen?`}
-                  description="Die Person und alle ihre Eintragungen werden gelöscht. Wer dahinter steht, rückt nach und bekommt eine E-Mail."
+                  description="Die Person und alle ihre Eintragungen werden gelöscht. Betroffene bekommen eine E-Mail."
                   confirmLabel="Entfernen"
                   action={deletePerson}
                   fields={{ profileId: person.id }}
