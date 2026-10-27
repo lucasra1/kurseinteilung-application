@@ -217,7 +217,7 @@ Event-Typen: `signup.created`, `signup.removed`, `signup.role_changed`, `signup.
   1. Zahl gesenkt um d: Zähler = max(0, Zähler − d).
   2. Termin vorbei: fertig, keine Ausschreibung.
   3. Termin nicht festgeschrieben: Zähler 0, fertig.
-  4. Wer vorher Backup war, mit diesem Zähler jetzt fix wäre und nicht ausdrücklich gesetzt wurde, wird gezählt; der Zähler steigt um diese Anzahl.
+  4. Wer vorher Backup war, mit diesem Zähler jetzt fix wäre und nicht ausdrücklich gesetzt wurde, wird gezählt; der Zähler steigt um diese Anzahl. Das wiederholt sich, bis niemand mehr, der vorher Backup war und nicht ausdrücklich gesetzt wurde, fix wäre. Beispiel: N 2 → 4 mit zwei Fixen und einem Backup ergibt A = 2, das Backup bleibt Backup.
   5. Fehlen mit dem neuen Zähler mehr fixe Plätze als vorher: Ausschreibung, wenn es Backups dieser Rolle gibt, sonst Aufruf.
 
 ### Transaktion: `mutateStaffing` (`lib/dal/staffing-tx.ts`)

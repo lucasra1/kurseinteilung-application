@@ -308,19 +308,25 @@ function planRole(
   if (!input.festgeschrieben) return { ausgeschrieben: 0, trigger: none };
   const counted = count;
 
-  // 4. Backups who would move up stay backups: their places are held instead.
+  // 4. Backups who would move up stay backups: their places are held instead. Repeated,
+  // since a number raised by more than the backups would still lift one.
   const wasBackup = new Set(
     rankedBefore.filter((s) => s.role === backup).map((s) => s.profileId),
   );
   const rankWith = (n: number) =>
     rankSignups(after.signups, withAusgeschrieben(after.staffing, kind, n));
-  count += rankWith(count).filter(
-    (s) =>
-      s.role === kind &&
-      wasBackup.has(s.profileId) &&
-      !input.explicit.has(s.profileId),
-  ).length;
-  const rankedAfter = rankWith(count);
+  const movedUp = (ranked: Array<PlanSignup & { role: Role }>) =>
+    ranked.filter(
+      (s) =>
+        s.role === kind &&
+        wasBackup.has(s.profileId) &&
+        !input.explicit.has(s.profileId),
+    ).length;
+  let rankedAfter = rankWith(count);
+  for (let up = movedUp(rankedAfter); up > 0; up = movedUp(rankedAfter)) {
+    count += up;
+    rankedAfter = rankWith(count);
+  }
 
   // 5. More fixed places missing than before: offer them to the backups, else call out.
   const more =

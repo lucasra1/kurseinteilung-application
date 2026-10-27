@@ -358,6 +358,40 @@ describe("planAusschreibung", () => {
     });
   });
 
+  it("keeps the only backup a backup when the number rises by more than one (N 2 → 4)", () => {
+    const signups = inOrder("anna", "ben", "clara");
+    const plan = instruktorPlan(
+      { staffing: staffing(2), signups },
+      { staffing: staffing(4), signups },
+    );
+    expect(plan).toEqual({
+      ausgeschrieben: 2,
+      trigger: { type: "backups", places: 2, recipients: ["clara"] },
+    });
+    expect(
+      roles(rankSignups(signups, staffing(4, plan.ausgeschrieben))),
+    ).toEqual({
+      anna: "instruktor",
+      ben: "instruktor",
+      clara: "backup-instruktor",
+    });
+  });
+
+  it("keeps the backup a backup when the number rises with a place already ausgeschrieben (N 2 → 4, A 1)", () => {
+    const signups = inOrder("anna", "clara");
+    const plan = instruktorPlan(
+      { staffing: staffing(2, 1), signups },
+      { staffing: staffing(4, 1), signups },
+    );
+    expect(plan).toEqual({
+      ausgeschrieben: 3,
+      trigger: { type: "backups", places: 2, recipients: ["clara"] },
+    });
+    expect(
+      roles(rankSignups(signups, staffing(4, plan.ausgeschrieben))),
+    ).toEqual({ anna: "instruktor", clara: "backup-instruktor" });
+  });
+
   it("calls the qualified when a higher number finds no backup", () => {
     const signups = inOrder("anna", "ben");
     expect(
@@ -366,6 +400,16 @@ describe("planAusschreibung", () => {
         { staffing: staffing(3), signups },
       ),
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "aufruf", places: 1 } });
+  });
+
+  it("calls the qualified and keeps the counter when a higher number finds no backup (N 2 → 4, A 1)", () => {
+    const signups = inOrder("anna");
+    expect(
+      instruktorPlan(
+        { staffing: staffing(2, 1), signups },
+        { staffing: staffing(4, 1), signups },
+      ),
+    ).toEqual({ ausgeschrieben: 1, trigger: { type: "aufruf", places: 2 } });
   });
 
   it("calls the qualified when a fixed person leaves and there is no backup", () => {
