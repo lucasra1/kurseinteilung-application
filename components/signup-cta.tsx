@@ -12,7 +12,8 @@ export type SignupOption = { kind: Kind; label: string; primary: boolean };
 
 export type SignupCtaProps = { terminId: string; hint?: string } & (
   | { mode: "eintragen"; options: SignupOption[] }
-  | { mode: "austragen" }
+  /** `warning`: what withdrawing triggers (`selfWithdrawWarning`), if the UI knows already. */
+  | { mode: "austragen"; warning?: string }
   /** A backup of a role with an ausgeschriebenen place: take it, or still withdraw. */
   | { mode: "uebernehmen" }
   | { mode: "disabled"; label: string }
@@ -68,6 +69,7 @@ export function SignupCta(props: SignupCtaProps) {
           destructive={false}
           title="Wirklich austragen?"
           description="Wer nach dir eingetragen ist, rückt nach. Die Praxisanleiterkoordinator:innen bekommen eine E-Mail."
+          warning={props.mode === "austragen" ? props.warning : undefined}
           confirmLabel="Austragen"
           action={changeSignup}
           fields={{ terminId: props.terminId, intent: "abmelden" }}

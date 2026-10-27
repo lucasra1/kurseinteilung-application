@@ -24,6 +24,7 @@ import {
 import { formatDaysUntil, formatLongDate, formatTimeRange } from "@/lib/dates";
 import { canClaimPlace, isBackup } from "@/lib/staffing";
 import { firstParam, hrefWith } from "@/lib/url";
+import { selfWithdrawWarning } from "@/lib/warning-text";
 
 export default function MeinePage({ searchParams }: PageProps<"/meine">) {
   return (
@@ -125,9 +126,10 @@ async function Meine({
             className="mt-0.5 size-4.5 shrink-0 text-zinc-500"
           />
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Du kannst dich jederzeit austragen. Fällt jemand aus, rückt das
-            erste Backup derselben Rolle automatisch nach und bekommt eine
-            E-Mail.
+            Du kannst dich jederzeit austragen. Ist der Termin nicht
+            festgeschrieben, rückt das erste Backup derselben Rolle automatisch
+            nach und bekommt eine E-Mail. Ist er festgeschrieben, wird dein
+            Platz den Backups angeboten: Wer zuerst übernimmt, bekommt ihn.
           </p>
         </div>
       </div>
@@ -212,7 +214,11 @@ function NextTermin({
         >
           {claimable ? CLAIM_LABEL : "Details"}
         </Link>
-        <SignupCta terminId={termin.id} mode="austragen" />
+        <SignupCta
+          terminId={termin.id}
+          mode="austragen"
+          warning={selfWithdrawWarning(termin, currentUserId)}
+        />
       </div>
     </article>
   );

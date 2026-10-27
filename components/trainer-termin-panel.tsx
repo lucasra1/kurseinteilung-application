@@ -26,6 +26,7 @@ import {
   ROLE_LABEL,
 } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
+import { selfWithdrawWarning } from "@/lib/warning-text";
 
 type Viewer = Qualifications & { id: string };
 
@@ -126,10 +127,14 @@ function cta(
       };
     }
     const many = KIND_LABEL[mine.kind].many;
-    const hint = isBackup(mine.role)
-      ? `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`
-      : `Du bist als ${KIND_LABEL[mine.kind].one} eingetragen.`;
-    return { terminId, mode: "austragen", hint };
+    if (isBackup(mine.role)) {
+      const hint = `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`;
+      return { terminId, mode: "austragen", hint };
+    }
+    // Only a fixed place on a festgeschriebenen Termin triggers an Ausschreibung.
+    const warning = selfWithdrawWarning(termin, viewer.id);
+    const hint = `Du bist als ${KIND_LABEL[mine.kind].one} eingetragen.${warning ? " Der Termin ist festgeschrieben. Wenn du dich austrägst, wird dein Platz ausgeschrieben." : ""}`;
+    return { terminId, mode: "austragen", hint, warning };
   }
   if (termin.isPast) {
     return { terminId, mode: "disabled", label: "Termin ist vorbei" };

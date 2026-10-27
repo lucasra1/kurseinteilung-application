@@ -45,7 +45,9 @@ function fieldValue(field: TerminField, value: string | number | null): string {
 }
 
 /** "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026" */
-function terminText(termin: TerminSnapshot): string {
+export function terminText(
+  termin: Pick<TerminSnapshot, "kursTitle" | "topic" | "date">,
+): string {
   return `„${termin.kursTitle} – ${termin.topic}“ am ${formatDate(termin.date)}`;
 }
 

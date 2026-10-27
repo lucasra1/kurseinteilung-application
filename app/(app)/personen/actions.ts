@@ -7,7 +7,7 @@ import { historyGroups } from "@/lib/audit-text";
 import { personHistory } from "@/lib/dal/audit";
 import { removePerson, setAdmin, setQualification } from "@/lib/dal/profiles";
 import { regenerateInviteToken } from "@/lib/dal/settings";
-import { kindSchema, uuidSchema } from "@/lib/validation";
+import { isBestaetigt, kindSchema, uuidSchema } from "@/lib/validation";
 
 export async function toggleAdmin(
   _prev: ActionResult,
@@ -45,7 +45,7 @@ export async function deletePerson(
     const { profileId } = z
       .object({ profileId: uuidSchema })
       .parse(Object.fromEntries(formData));
-    await removePerson(profileId);
+    await removePerson(profileId, isBestaetigt(formData));
     return "Person entfernt.";
   });
 }
