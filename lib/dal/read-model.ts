@@ -1,5 +1,14 @@
 import "server-only";
-import { and, asc, eq, gte, inArray, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { requireAdmin, requireUser } from "@/lib/dal/auth";
@@ -30,6 +39,11 @@ export type AdminSignupView = SignupView & {
 export type TerminView<S = SignupView> = {
   id: string;
   kursId: string;
+  kursTitle: string;
+  kursDescription: string;
+  /** 1-based position among all Termine of the Kurs, e.g. "Tag 2 von 3". */
+  dayIndex: number;
+  dayCount: number;
   date: string;
   startTime: string;
   endTime: string;
@@ -56,6 +70,22 @@ export type KursView<S = SignupView> = {
 
 type Filter = { kursId?: string; terminId?: string; upcomingOnly?: boolean };
 
+// Numbers every Termin within its Kurs before any filter applies.
+const numbered = db
+  .select({
+    id: termine.id,
+    dayIndex:
+      sql<number>`(row_number() over (partition by ${termine.kursId} order by ${termine.date}, ${termine.startTime}))::int`.as(
+        "day_index",
+      ),
+    dayCount:
+      sql<number>`(count(*) over (partition by ${termine.kursId}))::int`.as(
+        "day_count",
+      ),
+  })
+  .from(termine)
+  .as("numbered");
+
 /** Loads Kurse with their Termine and ranked signups, including contact details. */
 async function loadKursViews(
   filter: Filter = {},
@@ -77,8 +107,13 @@ async function loadKursViews(
       .where(and(...kursConditions))
       .orderBy(asc(kurse.title)),
     db
-      .select()
+      .select({
+        ...getTableColumns(termine),
+        dayIndex: numbered.dayIndex,
+        dayCount: numbered.dayCount,
+      })
       .from(termine)
+      .innerJoin(numbered, eq(numbered.id, termine.id))
       .where(and(...terminConditions))
       .orderBy(asc(termine.date), asc(termine.startTime)),
   ]);
@@ -128,6 +163,10 @@ async function loadKursViews(
         return {
           id: termin.id,
           kursId: termin.kursId,
+          kursTitle: kurs.title,
+          kursDescription: kurs.description,
+          dayIndex: termin.dayIndex,
+          dayCount: termin.dayCount,
           date: termin.date,
           startTime: termin.startTime,
           endTime: termin.endTime,
@@ -146,37 +185,67 @@ async function loadKursViews(
   }));
 }
 
-function withoutContacts(kurs: KursView<AdminSignupView>): KursView {
+function withoutContacts(termin: TerminView<AdminSignupView>): TerminView {
   return {
-    ...kurs,
-    termine: kurs.termine.map((termin) => ({
-      ...termin,
-      signups: termin.signups.map(({ profileId, fullName, rank, role }) => ({
-        profileId,
-        fullName,
-        rank,
-        role,
-      })),
+    ...termin,
+    signups: termin.signups.map(({ profileId, fullName, rank, role }) => ({
+      profileId,
+      fullName,
+      rank,
+      role,
     })),
   };
 }
 
-/** Upcoming Termine (today and later) grouped by Kurs, without contact details. */
-export async function getUpcomingKurse(): Promise<KursView[]> {
-  await requireUser();
-  const kursViews = await loadKursViews({ upcomingOnly: true });
+/** All Termine of the given Kurse in one list, in date order. */
+function inDateOrder<S>(kursViews: KursView<S>[]): TerminView<S>[] {
   return kursViews
-    .filter((kurs) => kurs.termine.length > 0)
-    .sort((a, b) => a.termine[0].date.localeCompare(b.termine[0].date))
-    .map(withoutContacts);
+    .flatMap((kurs) => kurs.termine)
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        a.startTime.localeCompare(b.startTime) ||
+        a.kursTitle.localeCompare(b.kursTitle),
+    );
 }
 
-/** All Kurse (also those without Termine) with contact details; past Termine on request. */
-export async function getAdminKurse(opts: {
+/** Upcoming Termine (today and later) of all Kurse, without contact details. */
+export async function getUpcomingTermine(): Promise<TerminView[]> {
+  await requireUser();
+  const kursViews = await loadKursViews({ upcomingOnly: true });
+  return inDateOrder(kursViews).map(withoutContacts);
+}
+
+/** A single Termin, also a past one, without contact details; null if unknown. */
+export async function findTermin(id: string): Promise<TerminView | null> {
+  await requireUser();
+  if (!uuidSchema.safeParse(id).success) return null;
+  const [termin] = inDateOrder(await loadKursViews({ terminId: id }));
+  return termin ? withoutContacts(termin) : null;
+}
+
+/** All Termine with contact details, in date order; past ones on request. */
+export async function getAdminTermine(opts: {
   includePast: boolean;
-}): Promise<KursView<AdminSignupView>[]> {
+}): Promise<TerminView<AdminSignupView>[]> {
   await requireAdmin();
-  return loadKursViews({ upcomingOnly: !opts.includePast });
+  return inDateOrder(await loadKursViews({ upcomingOnly: !opts.includePast }));
+}
+
+/** A single Termin with contact details; null if unknown. */
+export async function findAdminTermin(
+  id: string,
+): Promise<TerminView<AdminSignupView> | null> {
+  await requireAdmin();
+  if (!uuidSchema.safeParse(id).success) return null;
+  const [termin] = inDateOrder(await loadKursViews({ terminId: id }));
+  return termin ?? null;
+}
+
+/** All Kurse (also those without Termine) with all their Termine and contact details. */
+export async function getAdminKurse(): Promise<KursView<AdminSignupView>[]> {
+  await requireAdmin();
+  return loadKursViews();
 }
 
 export async function getAdminKurs(
@@ -187,16 +256,4 @@ export async function getAdminKurs(
   const [kurs] = await loadKursViews({ kursId: id });
   if (!kurs) notFound();
   return kurs;
-}
-
-export async function getAdminTermin(id: string): Promise<{
-  kurs: KursView<AdminSignupView>;
-  termin: TerminView<AdminSignupView>;
-}> {
-  await requireAdmin();
-  if (!uuidSchema.safeParse(id).success) notFound();
-  const kursViews = await loadKursViews({ terminId: id });
-  const kurs = kursViews.find((k) => k.termine.length > 0);
-  if (!kurs) notFound();
-  return { kurs, termin: kurs.termine[0] };
 }

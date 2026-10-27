@@ -10,20 +10,23 @@ import { requestLoginLink } from "./actions";
 export function LoginForm() {
   const [result, formAction] = useActionState(requestLoginLink, null);
   return (
-    <form action={formAction} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="email">E-Mail</Label>
+    <form action={formAction} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="email" className="text-sm font-semibold">
+          E-Mail
+        </Label>
         <Input
           id="email"
           name="email"
           type="email"
           autoComplete="email"
+          placeholder="name@beispiel.at"
           required
         />
       </div>
       <FormMessage result={result} />
-      <SubmitButton className="w-full" pendingText="Wird gesendet…">
-        Login-Link senden
+      <SubmitButton size="lg" className="w-full" pendingText="Wird gesendet…">
+        Login-Link schicken
       </SubmitButton>
     </form>
   );

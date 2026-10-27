@@ -18,13 +18,11 @@ export function ProfileForm({
 }) {
   const [result, formAction] = useActionState(saveProfile, null);
   return (
-    <form action={formAction} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="email">E-Mail</Label>
-        <Input id="email" value={email} readOnly disabled />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="fullName">Name</Label>
+    <form action={formAction} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="fullName" className="text-sm font-semibold">
+          Vor- und Nachname
+        </Label>
         <Input
           id="fullName"
           name="fullName"
@@ -33,18 +31,33 @@ export function ProfileForm({
           required
         />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="phone">Telefon (optional)</Label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="phone" className="text-sm font-semibold">
+          Telefon{" "}
+          <span className="font-normal text-muted-foreground">(optional)</span>
+        </Label>
         <Input
           id="phone"
           name="phone"
           type="tel"
           defaultValue={phone ?? ""}
           autoComplete="tel"
+          aria-describedby="phone-hint"
         />
+        <span id="phone-hint" className="text-[13px] text-muted-foreground">
+          Sehen nur Admins, falls kurzfristig etwas ist.
+        </span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="email" className="text-sm font-semibold">
+          E-Mail
+        </Label>
+        <Input id="email" value={email} readOnly disabled />
       </div>
       <FormMessage result={result} />
-      <SubmitButton pendingText="Wird gespeichert…">Speichern</SubmitButton>
+      <SubmitButton className="self-start" pendingText="Wird gespeichert…">
+        Speichern
+      </SubmitButton>
     </form>
   );
 }

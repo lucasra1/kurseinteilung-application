@@ -79,3 +79,28 @@ export function diffRoles(
   }
   return changes;
 }
+
+/** The role the next person to sign up would get, or null when the Termin is full. */
+export function nextRole(signupCount: number, s: Staffing): Role | null {
+  if (signupCount >= capacity(s)) return null;
+  return roleForRank(signupCount + 1, s);
+}
+
+/** "2 Trainer fehlen", "1 Backup fehlt" or "Voll besetzt". */
+export function staffingLabel(
+  t: Staffing & {
+    status: StaffingStatus;
+    trainerCount: number;
+    backupCount: number;
+  },
+): string {
+  if (t.status === "trainer-fehlt") {
+    const missing = t.trainersNeeded - t.trainerCount;
+    return missing === 1 ? "1 Trainer fehlt" : `${missing} Trainer fehlen`;
+  }
+  if (t.status === "backup-fehlt") {
+    const missing = t.backupsNeeded - t.backupCount;
+    return missing === 1 ? "1 Backup fehlt" : `${missing} Backups fehlen`;
+  }
+  return "Voll besetzt";
+}

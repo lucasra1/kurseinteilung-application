@@ -6,10 +6,9 @@ import { lockedTermin, mutateStaffing } from "@/lib/dal/staffing-tx";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, termine } from "@/lib/db/schema";
 import { DomainError } from "@/lib/errors";
-import type { kursSchema, terminSchema } from "@/lib/validation";
+import type { kursSchema, TerminInput } from "@/lib/validation";
 
 export type KursInput = z.infer<typeof kursSchema>;
-export type TerminInput = z.infer<typeof terminSchema>;
 
 async function terminIdsOfKurs(tx: Tx, kursId: string): Promise<string[]> {
   const rows = await tx
@@ -19,13 +18,24 @@ async function terminIdsOfKurs(tx: Tx, kursId: string): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
-export async function createKurs(input: KursInput): Promise<string> {
+/** Creates a Kurs together with its first Termine; nobody is signed up yet, so no emails. */
+export async function createKursWithTermine(
+  input: KursInput,
+  termineInput: TerminInput[],
+): Promise<string> {
   await requireAdmin();
-  const [row] = await db
-    .insert(kurse)
-    .values(input)
-    .returning({ id: kurse.id });
-  return row.id;
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(kurse)
+      .values(input)
+      .returning({ id: kurse.id });
+    if (termineInput.length > 0) {
+      await tx
+        .insert(termine)
+        .values(termineInput.map((termin) => ({ ...termin, kursId: row.id })));
+    }
+    return row.id;
+  });
 }
 
 /** Staffing numbers can change roles in every Termin of the Kurs, so this goes through mutateStaffing. */
@@ -87,15 +97,14 @@ export async function updateTermin(
   if (!updated) throw new DomainError("nicht-gefunden");
 }
 
-export async function deleteTermin(id: string): Promise<{ kursId: string }> {
+export async function deleteTermin(id: string): Promise<void> {
   const admin = await requireAdmin();
-  return mutateStaffing({
+  await mutateStaffing({
     actorId: admin.id,
     terminIds: async () => [id],
     run: async (tx, locked) => {
-      const termin = lockedTermin(locked, id);
+      lockedTermin(locked, id);
       await tx.delete(termine).where(eq(termine.id, id));
-      return { kursId: termin.kursId };
     },
   });
 }

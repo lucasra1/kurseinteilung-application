@@ -39,7 +39,7 @@ function withdrawalEmail(
       `${change.person.fullName} hat sich von ${what} am ${when} abgemeldet.\n\n` +
       `Aktueller Stand: Trainer ${counts.trainers}/${termin.trainersNeeded}, ` +
       `Backup ${counts.backups}/${termin.backupsNeeded}.\n\n` +
-      `${env.APP_URL}/admin/termine/${termin.id}${SIGNATURE}`,
+      `${env.APP_URL}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }
 
@@ -47,7 +47,7 @@ function personEmail(change: StaffingChange): EmailMessage {
   const { termin, person, from, to } = change;
   const { what, when, day } = describe(termin);
   const greeting = `Hallo ${person.fullName},\n\n`;
-  const link = `\n\n${env.APP_URL}/termine${SIGNATURE}`;
+  const link = `\n\n${env.APP_URL}/meine${SIGNATURE}`;
 
   if (from && to) {
     return {

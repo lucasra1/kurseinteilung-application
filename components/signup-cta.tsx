@@ -1,0 +1,60 @@
+"use client";
+
+import { useActionState } from "react";
+import { changeSignup } from "@/app/(app)/termine/actions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { FormMessage } from "@/components/form-message";
+import { SubmitButton } from "@/components/submit-button";
+import { Button } from "@/components/ui/button";
+
+export type SignupCtaProps = { terminId: string; hint?: string } & (
+  | { mode: "eintragen"; label: string }
+  | { mode: "austragen" }
+  | { mode: "disabled"; label: string }
+);
+
+/** The main action at the bottom of the Termin panel. */
+export function SignupCta(props: SignupCtaProps) {
+  const [result, formAction] = useActionState(changeSignup, null);
+  return (
+    <div className="flex flex-col gap-2.5">
+      {props.hint && (
+        <p className="text-center text-[13px] leading-snug text-muted-foreground">
+          {props.hint}
+        </p>
+      )}
+      {props.mode === "eintragen" && (
+        <form action={formAction} className="flex flex-col gap-2">
+          <input type="hidden" name="terminId" value={props.terminId} />
+          <input type="hidden" name="intent" value="eintragen" />
+          <SubmitButton
+            size="lg"
+            className="w-full"
+            pendingText="Wird eingetragen…"
+          >
+            {props.label}
+          </SubmitButton>
+        </form>
+      )}
+      {props.mode === "austragen" && (
+        <ConfirmDialog
+          triggerLabel="Austragen"
+          triggerSize="default"
+          triggerClassName="w-full"
+          destructive={false}
+          title="Wirklich austragen?"
+          description="Wer nach dir eingetragen ist, rückt nach. Die Admins bekommen eine E-Mail."
+          confirmLabel="Austragen"
+          action={changeSignup}
+          fields={{ terminId: props.terminId, intent: "abmelden" }}
+        />
+      )}
+      {props.mode === "disabled" && (
+        <Button size="lg" className="w-full" disabled>
+          {props.label}
+        </Button>
+      )}
+      <FormMessage result={result} />
+    </div>
+  );
+}

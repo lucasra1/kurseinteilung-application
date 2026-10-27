@@ -1,9 +1,15 @@
-export function SkeletonList({ rows = 2 }: { rows?: number }) {
+export function SkeletonList({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="space-y-3" aria-busy="true">
+    <div className="flex flex-col gap-3" aria-busy="true">
+      <span className="sr-only">Lädt…</span>
+      <div className="h-8 w-48 animate-pulse rounded-lg bg-zinc-200" />
+      <div className="mb-2 h-5 w-72 max-w-full animate-pulse rounded-lg bg-zinc-200/70" />
       {Array.from({ length: rows }, (_, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
-        <div key={i} className="h-32 animate-pulse rounded-xl bg-muted" />
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
+          key={i}
+          className="h-28 animate-pulse rounded-2xl bg-zinc-200/60"
+        />
       ))}
     </div>
   );

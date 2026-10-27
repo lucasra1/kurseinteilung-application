@@ -21,7 +21,7 @@ pnpm dev                               # http://localhost:3000
 - Login-Mails landen lokal in **Mailpit**: http://127.0.0.1:54324
 - Benachrichtigungs-Mails werden lokal (ohne `RESEND_API_KEY`) in der Konsole ausgegeben.
 - Die E-Mail in `ADMIN_EMAILS` kann sich direkt unter `/login` anmelden und ist Admin.
-- Den Einladungslink für weitere Personen findest du als Admin unter **Admin → Einstellungen**.
+- Den Einladungslink für weitere Personen findest du als Admin unter **Personen**.
 
 Weitere Befehle: `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm db:generate` (nach Änderungen an `lib/db/schema.ts`), `pnpm sb:stop`.
 

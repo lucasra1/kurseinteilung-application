@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { type ReactNode, useActionState, useState } from "react";
 import { FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import {
@@ -26,6 +26,9 @@ export function ConfirmDialog({
   fields,
   destructive = true,
   triggerSize = "default",
+  triggerIcon,
+  iconOnly = false,
+  triggerClassName,
 }: {
   triggerLabel: string;
   title: string;
@@ -35,6 +38,10 @@ export function ConfirmDialog({
   fields: Record<string, string>;
   destructive?: boolean;
   triggerSize?: "default" | "sm" | "xs";
+  triggerIcon?: ReactNode;
+  /** Shows only `triggerIcon`; `triggerLabel` becomes the accessible name. */
+  iconOnly?: boolean;
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [result, formAction] = useActionState(
@@ -50,9 +57,17 @@ export function ConfirmDialog({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
-        render={<Button variant={variant} size={triggerSize} />}
+        render={
+          <Button
+            variant={iconOnly ? "ghost" : variant}
+            size={iconOnly ? "icon" : triggerSize}
+            aria-label={iconOnly ? triggerLabel : undefined}
+            className={triggerClassName}
+          />
+        }
       >
-        {triggerLabel}
+        {triggerIcon}
+        {!iconOnly && triggerLabel}
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { ZodError, z } from "zod";
 
 /** Optional text field: missing or blank becomes null. */
 const optionalText = z
@@ -68,3 +68,46 @@ export const terminSchema = z
     path: ["endTime"],
     error: "Das Ende muss nach dem Beginn liegen.",
   });
+
+export type TerminInput = z.infer<typeof terminSchema>;
+
+/**
+ * Parses the repeated Termin fields of the "Neuer Kurs" form (one value per row, in
+ * order). Messages name the row, e.g. "Tag 2: Bitte gib ein Thema ein."
+ */
+export function parseTerminRows(formData: FormData): TerminInput[] {
+  const column = (name: string) => formData.getAll(name).map(String);
+  const dates = column("date");
+  const startTimes = column("startTime");
+  const endTimes = column("endTime");
+  const topics = column("topic");
+  const locations = column("location");
+  if (dates.length === 0) {
+    throw new ZodError([
+      {
+        code: "custom",
+        message: "Bitte leg mindestens einen Termin an.",
+        path: ["termine"],
+        input: undefined,
+      },
+    ]);
+  }
+  return dates.map((date, index) => {
+    const result = terminSchema.safeParse({
+      date,
+      startTime: startTimes[index],
+      endTime: endTimes[index],
+      topic: topics[index],
+      location: locations[index],
+    });
+    if (!result.success) {
+      throw new ZodError(
+        result.error.issues.map((issue) => ({
+          ...issue,
+          message: `Tag ${index + 1}: ${issue.message}`,
+        })),
+      );
+    }
+    return result.data;
+  });
+}
