@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AuditEvent, PersonChanges, TerminSnapshot } from "@/lib/audit";
 import {
   auditSentence,
+  bereichTypes,
   formatAuditTime,
   historyGroups,
 } from "@/lib/audit-text";
@@ -452,14 +453,14 @@ describe("historyGroups outside a Termin", () => {
       },
       {
         actionId: "a1",
-        termin: { id: "t1", label: "Tag 1, Sa., 07.11.2026" },
+        about: { kind: "termin", id: "t1", label: "Tag 1, Sa., 07.11.2026" },
         time: "Sa., 31.10., 14:05",
         text: "Lea Berger hat den Termin angelegt",
         consequences: [],
       },
       {
         actionId: "a1",
-        termin: { id: "t2", label: "Tag 2, So., 08.11.2026" },
+        about: { kind: "termin", id: "t2", label: "Tag 2, So., 08.11.2026" },
         time: "Sa., 31.10., 14:05",
         text: "Lea Berger hat den Termin angelegt",
         consequences: [],
@@ -500,14 +501,15 @@ describe("historyGroups outside a Termin", () => {
       "person",
     );
     expect(
-      groups.map(({ termin, text, consequences }) => ({
-        termin,
+      groups.map(({ about, text, consequences }) => ({
+        about,
         text,
         consequences,
       })),
     ).toEqual([
       {
-        termin: {
+        about: {
+          kind: "termin",
           id: "t1",
           label: "Erste Hilfe Grundkurs – Tag 1, Sa., 07.11.2026",
         },
@@ -515,7 +517,8 @@ describe("historyGroups outside a Termin", () => {
         consequences: ["Ben Maier rückt als Instruktor nach"],
       },
       {
-        termin: {
+        about: {
+          kind: "termin",
           id: "t2",
           label: "Erste Hilfe Grundkurs – Tag 2, So., 08.11.2026",
         },
@@ -675,6 +678,165 @@ describe("auditSentence for Ausschreibung", () => {
           "1 Instruktor-Platz ausgeschrieben, angeschrieben: Ben Maier",
         ],
       },
+    ]);
+  });
+});
+
+describe("bereichTypes", () => {
+  it("puts Eintragungen, Ausschreibungen and Aufrufe under Besetzung", () => {
+    expect(bereichTypes("besetzung").sort()).toEqual([
+      "place.aufruf",
+      "place.ausgeschrieben",
+      "signup.claimed",
+      "signup.created",
+      "signup.moved",
+      "signup.place_given",
+      "signup.removed",
+      "signup.role_changed",
+    ]);
+  });
+
+  it("puts what happened to Termine and Kurse under Termine & Kurse", () => {
+    expect(bereichTypes("termine-kurse").sort()).toEqual([
+      "kurs.created",
+      "kurs.deleted",
+      "kurs.updated",
+      "termin.aufgehoben",
+      "termin.created",
+      "termin.deleted",
+      "termin.festgeschrieben",
+      "termin.updated",
+    ]);
+  });
+
+  it("puts registering, profile changes, roles and removal under Personen", () => {
+    expect(bereichTypes("personen").sort()).toEqual([
+      "person.koordination_changed",
+      "person.qualification_changed",
+      "person.registered",
+      "person.removed",
+      "person.updated",
+    ]);
+  });
+});
+
+describe("historyGroups on the Verlauf page", () => {
+  /** What each group is about, with only the given Termine, Kurse and people still there. */
+  const about = (
+    events: AuditEvent[],
+    still: { termin?: string[]; kurs?: string[]; person?: string[] } = {},
+  ) =>
+    historyGroups(events, "all", {
+      termin: new Set(still.termin),
+      kurs: new Set(still.kurs),
+      person: new Set(still.person),
+    }).map((group) => group.about);
+
+  it("names Kurs, Thema and date of the Termin and links to its panel", () => {
+    const signedUp = event(ANNA, {
+      type: "signup.created",
+      profileId: ANNA.id,
+      data: { termin, personName: ANNA.name, from: null, to: "instruktor" },
+    });
+
+    expect(about([signedUp], { termin: ["t1"] })).toEqual([
+      {
+        kind: "termin",
+        id: "t1",
+        label: "Erste Hilfe Grundkurs – Tag 1, Sa., 07.11.2026",
+        href: "/termine?termin=t1",
+      },
+    ]);
+  });
+
+  it("names a deleted Termin as it was, without a link", () => {
+    const deleted = event(LEA, { type: "termin.deleted", data: { termin } });
+
+    expect(about([deleted])).toEqual([
+      {
+        kind: "termin",
+        id: "t1",
+        label: "Erste Hilfe Grundkurs – Tag 1, Sa., 07.11.2026",
+      },
+    ]);
+  });
+
+  it("names the Kurs of an entry without a Termin and links to the Kurs page", () => {
+    const created = [
+      {
+        ...event(LEA, {
+          type: "kurs.created",
+          data: { kursTitle: "Erste Hilfe Grundkurs" },
+        }),
+        terminId: null,
+      },
+      event(LEA, { type: "termin.created", data: { termin } }),
+    ];
+
+    expect(about(created, { termin: ["t1"], kurs: ["k1"] })).toEqual([
+      {
+        kind: "kurs",
+        id: "k1",
+        label: "Erste Hilfe Grundkurs",
+        href: "/kurse/k1",
+      },
+      {
+        kind: "termin",
+        id: "t1",
+        label: "Erste Hilfe Grundkurs – Tag 1, Sa., 07.11.2026",
+        href: "/termine?termin=t1",
+      },
+    ]);
+  });
+
+  it("names a deleted Kurs by its title back then, without a link", () => {
+    const deleted = {
+      ...event(LEA, {
+        type: "kurs.deleted",
+        data: { kursTitle: "Erste Hilfe Grundkurs" },
+      }),
+      terminId: null,
+    };
+
+    expect(about([deleted])).toEqual([
+      { kind: "kurs", id: "k1", label: "Erste Hilfe Grundkurs" },
+    ]);
+  });
+
+  it("names the person of an entry without Termin or Kurs and links to their sheet", () => {
+    const qualified = {
+      ...event(LEA, {
+        type: "person.qualification_changed",
+        profileId: ANNA.id,
+        data: { personName: ANNA.name, kind: "instruktor", granted: true },
+      }),
+      terminId: null,
+      kursId: null,
+    };
+
+    expect(about([qualified], { person: ["anna"] })).toEqual([
+      {
+        kind: "person",
+        id: "anna",
+        label: "Anna Huber",
+        href: "/personen?person=anna",
+      },
+    ]);
+  });
+
+  it("names a removed person by their name back then, without a link", () => {
+    const removed = {
+      ...event(LEA, {
+        type: "person.removed",
+        profileId: ANNA.id,
+        data: { personName: ANNA.name, from: null, to: null },
+      }),
+      terminId: null,
+      kursId: null,
+    };
+
+    expect(about([removed])).toEqual([
+      { kind: "person", id: "anna", label: "Anna Huber" },
     ]);
   });
 });

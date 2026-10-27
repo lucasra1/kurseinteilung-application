@@ -28,7 +28,7 @@ async function KursDetail({
   const { id } = await params;
   const [kurs, history] = await Promise.all([
     getAdminKurs(id),
-    getHistory("kurs", id),
+    getHistory({ scope: "kurs", id }),
   ]);
   const last = kurs.termine.at(-1);
 
@@ -137,7 +137,7 @@ async function KursDetail({
           <HistoryList
             key={history.groups[0]?.actionId ?? "leer"}
             initial={history}
-            loadMore={moreHistory.bind(null, "kurs", kurs.id)}
+            loadMore={moreHistory.bind(null, { scope: "kurs", id: kurs.id })}
           />
         </section>
       </div>

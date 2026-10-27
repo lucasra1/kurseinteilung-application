@@ -33,7 +33,7 @@ async function Personen({
     requireAdmin(),
     listPeople(),
     getInviteToken(),
-    personId ? getHistory("person", personId) : null,
+    personId ? getHistory({ scope: "person", id: personId }) : null,
   ]);
   const link = `${env.APP_URL}/einladung/${token}`;
   const adminCount = people.filter((p) => p.isAdmin).length;
@@ -135,7 +135,7 @@ function PersonSheet({
       <HistoryList
         key={history.groups[0]?.actionId ?? "leer"}
         initial={history}
-        loadMore={moreHistory.bind(null, "person", person.id)}
+        loadMore={moreHistory.bind(null, { scope: "person", id: person.id })}
       />
     </TerminPanel>
   );

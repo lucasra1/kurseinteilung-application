@@ -121,7 +121,7 @@ export async function AdminView({
     ? await Promise.all([
         all.find((t) => t.id === query.termin) ?? findAdminTermin(query.termin),
         listPeople(),
-        getHistory("termin", query.termin),
+        getHistory({ scope: "termin", id: query.termin }),
       ])
     : [null, [], null];
 

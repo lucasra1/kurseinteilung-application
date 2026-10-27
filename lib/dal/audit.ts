@@ -1,14 +1,29 @@
 import "server-only";
-import { and, desc, eq, lt, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  inArray,
+  lt,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Actor, AuditEntry, AuditEvent } from "@/lib/audit";
 import {
-  type HistoryScope,
+  type Bereich,
+  bereichTypes,
+  type ExistingSubjects,
+  type HistorySource,
   type HistoryView,
   historyGroups,
+  type SubjectKind,
 } from "@/lib/audit-text";
 import { requireAdmin } from "@/lib/dal/auth";
 import { db, type Tx } from "@/lib/db/client";
-import { auditEvents } from "@/lib/db/schema";
+import { auditEvents, kurse, profiles, termine } from "@/lib/db/schema";
 import { uuidSchema } from "@/lib/validation";
 
 /**
@@ -50,8 +65,12 @@ const cursorOf = sql<string>`to_char(${auditEvents.createdAt} at time zone 'UTC'
 /**
  * About PAGE_SIZE entries, never splitting an action: all of its entries share one
  * `created_at` (the transaction's `now()`), and a page always ends between two timestamps.
+ * Without a `scope`, all entries.
  */
-async function historyPage(scope: SQL, cursor?: string): Promise<HistoryPage> {
+async function historyPage(
+  scope: SQL | undefined,
+  cursor?: string,
+): Promise<HistoryPage> {
   const where = cursor
     ? and(scope, lt(auditEvents.createdAt, sql`${cursor}::timestamptz`))
     : scope;
@@ -91,7 +110,7 @@ function toEvents(rows: { row: typeof auditEvents.$inferSelect }[]) {
   return rows.map(({ row }) => row as AuditEvent);
 }
 
-const SCOPE_FILTER: Record<HistoryScope, (id: string) => SQL> = {
+const SUBJECT_FILTER: Record<SubjectKind, (id: string) => SQL> = {
   termin: (id) => eq(auditEvents.terminId, id),
   // The Kurs and its Termine, also deleted ones.
   kurs: (id) => eq(auditEvents.kursId, id),
@@ -100,18 +119,82 @@ const SCOPE_FILTER: Record<HistoryScope, (id: string) => SQL> = {
     or(eq(auditEvents.profileId, id), eq(auditEvents.actorId, id)) as SQL,
 };
 
-/** A page of the Verlauf of a Termin, Kurs or person, older than `cursor`. Admins only. */
+const part = alias(auditEvents, "part");
+
+/**
+ * Whole parts of actions (an action's entries on one Termin, or those on none) with an
+ * entry of the Bereich, so a filtered group keeps its main entry and its consequences.
+ */
+function inBereich(bereich: Bereich): SQL {
+  return exists(
+    db
+      .select({ one: sql`1` })
+      .from(part)
+      .where(
+        and(
+          eq(part.actionId, auditEvents.actionId),
+          sql`${part.terminId} is not distinct from ${auditEvents.terminId}`,
+          inArray(part.type, bereichTypes(bereich)),
+        ),
+      ),
+  );
+}
+
+/** Which of the entries' Termine, Kurse and people still exist. */
+async function existingSubjects(
+  events: AuditEvent[],
+): Promise<ExistingSubjects> {
+  const found = async (
+    table: typeof termine | typeof kurse | typeof profiles,
+    key: "terminId" | "kursId" | "profileId",
+  ) => {
+    const ids = [...new Set(events.flatMap((e) => e[key] ?? []))];
+    if (ids.length === 0) return new Set<string>();
+    const rows = await db
+      .select({ id: table.id })
+      .from(table)
+      .where(inArray(table.id, ids));
+    return new Set(rows.map((row) => row.id));
+  };
+  const [termin, kurs, person] = await Promise.all([
+    found(termine, "terminId"),
+    found(kurse, "kursId"),
+    found(profiles, "profileId"),
+  ]);
+  return { termin, kurs, person };
+}
+
+/**
+ * A page of the Verlauf of a Termin, Kurs or person, or of all entries (of one Bereich),
+ * older than `cursor`. Admins only.
+ */
 export async function getHistory(
-  scope: HistoryScope,
-  id: string,
+  source: HistorySource,
   cursor?: string,
 ): Promise<HistoryView> {
   await requireAdmin();
-  if (!uuidSchema.safeParse(id).success)
+  if (source.scope === "all") {
+    const page = await historyPage(
+      source.bereich && inBereich(source.bereich),
+      cursor,
+    );
+    return {
+      groups: historyGroups(
+        page.events,
+        "all",
+        await existingSubjects(page.events),
+      ),
+      nextCursor: page.nextCursor,
+    };
+  }
+  if (!uuidSchema.safeParse(source.id).success)
     return { groups: [], nextCursor: null };
-  const page = await historyPage(SCOPE_FILTER[scope](id), cursor);
+  const page = await historyPage(
+    SUBJECT_FILTER[source.scope](source.id),
+    cursor,
+  );
   return {
-    groups: historyGroups(page.events, scope),
+    groups: historyGroups(page.events, source.scope),
     nextCursor: page.nextCursor,
   };
 }

@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { type DataResult, runQuery } from "@/lib/action-result";
 import {
-  HISTORY_SCOPES,
-  type HistoryScope,
+  BEREICHE,
+  type HistorySource,
   type HistoryView,
+  SUBJECT_KINDS,
 } from "@/lib/audit-text";
 import { getHistory } from "@/lib/dal/audit";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -19,19 +20,20 @@ export async function logout(): Promise<void> {
 }
 
 const moreHistoryInput = z.object({
-  scope: z.enum(HISTORY_SCOPES),
-  id: uuidSchema,
+  source: z.discriminatedUnion("scope", [
+    z.object({ scope: z.enum(SUBJECT_KINDS), id: uuidSchema }),
+    z.object({ scope: z.literal("all"), bereich: z.enum(BEREICHE).optional() }),
+  ]),
   cursor: z.iso.datetime(),
 });
 
 /** Older Verlauf entries for "Mehr anzeigen"; admins only (via `getHistory`). */
 export async function moreHistory(
-  scope: HistoryScope,
-  id: string,
+  source: HistorySource,
   cursor: string,
 ): Promise<DataResult<HistoryView>> {
   return runQuery(async () => {
-    const input = moreHistoryInput.parse({ scope, id, cursor });
-    return getHistory(input.scope, input.id, input.cursor);
+    const input = moreHistoryInput.parse({ source, cursor });
+    return getHistory(input.source, input.cursor);
   });
 }

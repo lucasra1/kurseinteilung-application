@@ -158,7 +158,10 @@ export function AdminTerminPanel({
             <HistoryList
               key={history.groups[0]?.actionId ?? "leer"}
               initial={history}
-              loadMore={moreHistory.bind(null, "termin", termin.id)}
+              loadMore={moreHistory.bind(null, {
+                scope: "termin",
+                id: termin.id,
+              })}
             />
           </div>
         </details>
