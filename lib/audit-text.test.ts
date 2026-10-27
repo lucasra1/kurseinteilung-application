@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { AuditEvent, PersonChanges, TerminSnapshot } from "@/lib/audit";
 import {
   auditSentence,
-  bereichTypes,
   formatAuditTime,
   historyGroups,
 } from "@/lib/audit-text";
@@ -545,10 +544,19 @@ describe("auditSentence for Festschreiben", () => {
 });
 
 describe("auditSentence for Ausschreibung", () => {
-  const ausgeschrieben = (places: number, angeschrieben: string[]) =>
+  /** Those written to, by made-up IDs. */
+  const recipients = (names: string[]) =>
+    names.map((personName, i) => ({ profileId: `p${i}`, personName }));
+
+  const ausgeschrieben = (places: number, names: string[]) =>
     event(LEA, {
       type: "place.ausgeschrieben",
-      data: { termin, kind: "instruktor", places, angeschrieben },
+      data: {
+        termin,
+        kind: "instruktor",
+        places,
+        recipients: recipients(names),
+      },
     });
 
   it("names the ausgeschriebenen places and who was written to", () => {
@@ -566,10 +574,17 @@ describe("auditSentence for Ausschreibung", () => {
     );
   });
 
-  const aufruf = (places: number, angeschrieben: number) =>
+  const aufruf = (places: number, count: number) =>
     event(LEA, {
       type: "place.aufruf",
-      data: { termin, kind: "instruktor", places, angeschrieben },
+      data: {
+        termin,
+        kind: "instruktor",
+        places,
+        recipients: recipients(
+          Array.from({ length: count }, (_, i) => `Q${i}`),
+        ),
+      },
     });
 
   it("says the place lacks a backup and how many qualified were written to", () => {
@@ -578,6 +593,32 @@ describe("auditSentence for Ausschreibung", () => {
     );
     expect(auditSentence(aufruf(2, 1))).toBe(
       "2 Instruktor-Plätze fehlen, kein Backup: 1 qualifizierte Person angeschrieben",
+    );
+  });
+
+  it("reads older entries, which stored only the backups' names or how many were written to", () => {
+    expect(
+      auditSentence(
+        event(LEA, {
+          type: "place.ausgeschrieben",
+          data: {
+            termin,
+            kind: "instruktor",
+            places: 1,
+            angeschrieben: ["Ben Maier"],
+          },
+        }),
+      ),
+    ).toBe("1 Instruktor-Platz ausgeschrieben, angeschrieben: Ben Maier");
+    expect(
+      auditSentence(
+        event(LEA, {
+          type: "place.aufruf",
+          data: { termin, kind: "instruktor", places: 1, angeschrieben: 14 },
+        }),
+      ),
+    ).toBe(
+      "1 Instruktor-Platz fehlt, kein Backup: 14 Qualifizierte angeschrieben",
     );
   });
 
@@ -678,44 +719,6 @@ describe("auditSentence for Ausschreibung", () => {
           "1 Instruktor-Platz ausgeschrieben, angeschrieben: Ben Maier",
         ],
       },
-    ]);
-  });
-});
-
-describe("bereichTypes", () => {
-  it("puts Eintragungen, Ausschreibungen and Aufrufe under Besetzung", () => {
-    expect(bereichTypes("besetzung").sort()).toEqual([
-      "place.aufruf",
-      "place.ausgeschrieben",
-      "signup.claimed",
-      "signup.created",
-      "signup.moved",
-      "signup.place_given",
-      "signup.removed",
-      "signup.role_changed",
-    ]);
-  });
-
-  it("puts what happened to Termine and Kurse under Termine & Kurse", () => {
-    expect(bereichTypes("termine-kurse").sort()).toEqual([
-      "kurs.created",
-      "kurs.deleted",
-      "kurs.updated",
-      "termin.aufgehoben",
-      "termin.created",
-      "termin.deleted",
-      "termin.festgeschrieben",
-      "termin.updated",
-    ]);
-  });
-
-  it("puts registering, profile changes, roles and removal under Personen", () => {
-    expect(bereichTypes("personen").sort()).toEqual([
-      "person.koordination_changed",
-      "person.qualification_changed",
-      "person.registered",
-      "person.removed",
-      "person.updated",
     ]);
   });
 });

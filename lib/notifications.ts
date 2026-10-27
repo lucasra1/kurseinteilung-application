@@ -10,14 +10,13 @@ import {
   type ActionMailInput,
   MAIL_GROUPS,
   type StaffingMail,
-  staffingMails,
 } from "@/lib/mail-text";
 
-/** What one staffing action did, as `mutateStaffing` hands it over after the commit. */
-export type StaffingOutcome = Pick<
-  ActionMailInput,
-  "actor" | "entries" | "after"
->;
+/**
+ * What `mutateStaffing` hands over after the commit: the actor, the entries it wrote, and
+ * the Termine before and after the action.
+ */
+export type StaffingOutcome = Omit<ActionMailInput, "today" | "appUrl">;
 
 /** Addresses by profile ID; a removed account has none. */
 async function addresses(ids: string[]): Promise<Map<string, string>> {
@@ -69,29 +68,19 @@ async function addressed(
 
 /**
  * Sends the mails of one staffing action, group by group: should the daily Resend quota run
- * out, the more urgent ones are out already (spec 4, Kontingent). Never throws: a failed
- * group is logged, the next one is still sent, and the action succeeds.
+ * out, the more urgent ones are out already (spec 4, Kontingent). Never throws: a group that
+ * fails to build or send is logged, the next one is still sent, and the action succeeds.
  */
 export async function sendStaffingNotifications(
   outcome: StaffingOutcome,
 ): Promise<void> {
-  let mails: StaffingMail[];
-  try {
-    mails = staffingMails({
-      ...outcome,
-      today: todayInVienna(),
-      appUrl: env.APP_URL,
-    });
-  } catch (error) {
-    console.error("[email] Mails nicht gebaut", error);
-    return;
-  }
+  const input = { ...outcome, today: todayInVienna(), appUrl: env.APP_URL };
   for (const group of MAIL_GROUPS) {
     try {
-      const inGroup = mails.filter((mail) => mail.group === group);
-      await sendEmails(await addressed(inGroup, outcome.actor));
+      const mails = group.build(input);
+      await sendEmails(await addressed(mails, outcome.actor));
     } catch (error) {
-      console.error(`[email] ${group} fehlgeschlagen`, error);
+      console.error(`[email] ${group.name} fehlgeschlagen`, error);
     }
   }
 }

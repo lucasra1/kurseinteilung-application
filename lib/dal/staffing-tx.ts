@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import {
   explicitlyPlaced,
+  type Recipient,
   type StaffingAction,
   type StaffingTermin,
   staffingEvents,
@@ -12,7 +13,10 @@ import { todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import { ConfirmationRequired, DomainError } from "@/lib/errors";
-import { sendStaffingNotifications } from "@/lib/notifications";
+import {
+  type StaffingOutcome,
+  sendStaffingNotifications,
+} from "@/lib/notifications";
 import {
   type Aufruf,
   type AusschreibungPlan,
@@ -179,9 +183,6 @@ function planTermine(
   });
 }
 
-/** Someone an Aufruf writes to; the address is looked up when sending. */
-type AufrufRecipient = { id: string; fullName: string };
-
 /** The plans' Aufrufe with their recipients; writes nothing, so the Warndialog can count them. */
 async function resolveAufrufe(
   tx: Tx,
@@ -189,7 +190,7 @@ async function resolveAufrufe(
   plans: AusschreibungPlan[],
   signupsBefore: SignupRow[],
   signupsAfter: SignupRow[],
-): Promise<Aufruf<AufrufRecipient>[]> {
+): Promise<Aufruf<Recipient>[]> {
   const kinds = new Set(
     triggered(plans)
       .filter(({ trigger }) => trigger.type === "aufruf")
@@ -216,13 +217,20 @@ async function resolveAufrufe(
         ),
       ),
     );
-  return planAufrufe({
+  const planned = planAufrufe({
     plans,
     people,
     before: signupsBefore,
     after: signupsAfter,
     actorId: action.actor.id,
   });
+  return planned.map(({ recipients, ...aufruf }) => ({
+    ...aufruf,
+    recipients: recipients.map((p) => ({
+      profileId: p.id,
+      personName: p.fullName,
+    })),
+  }));
 }
 
 /** Writes the planned counters; returns the Termine with them. */
@@ -260,7 +268,7 @@ export type Bestaetigt = boolean | "nie-noetig";
 function warnings(
   triggers: Triggered[],
   afterRun: Map<string, StaffingTermin>,
-  aufrufe: Aufruf<AufrufRecipient>[],
+  aufrufe: Aufruf<Recipient>[],
 ): Warning[] {
   return triggers.flatMap(({ terminId, kind, trigger }): Warning[] => {
     const termin = afterRun.get(terminId);
@@ -342,25 +350,28 @@ export async function mutateStaffing<T>(opts: {
 
     const rankedBefore = rankedByTermin(before, signupsBefore);
     const rankedAfter = rankedByTermin(after, signupsAfter);
-    const afterStates = states(after, rankedAfter);
+    const terminStates = {
+      before: states(before, rankedBefore),
+      after: states(after, rankedAfter),
+    };
     // Kept in memory for the mails: read back, entries of one action have no order.
     const entries = staffingEvents({
       action,
-      before: states(before, rankedBefore),
-      after: afterStates,
+      ...terminStates,
       plans,
       aufrufe,
       ...names,
     });
     await logEvents(tx, action.actor, entries);
-    return { result, entries, after: afterStates };
+    const outcome: StaffingOutcome = {
+      actor: action.actor,
+      entries,
+      ...terminStates,
+    };
+    return { result, outcome };
   });
 
-  await sendStaffingNotifications({
-    actor: action.actor,
-    entries: committed.entries,
-    after: committed.after,
-  });
+  await sendStaffingNotifications(committed.outcome);
   return committed.result;
 }
 

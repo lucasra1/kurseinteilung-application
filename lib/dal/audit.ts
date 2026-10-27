@@ -5,6 +5,8 @@ import {
   eq,
   exists,
   inArray,
+  isNotNull,
+  isNull,
   lt,
   or,
   type SQL,
@@ -12,18 +14,17 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Actor, AuditEntry, AuditEvent } from "@/lib/audit";
+import { type HistoryView, historyGroups } from "@/lib/audit-text";
+import { requireAdmin } from "@/lib/dal/auth";
+import { db, type Tx } from "@/lib/db/client";
+import { auditEvents, kurse, profiles, termine } from "@/lib/db/schema";
 import {
   type Bereich,
   bereichTypes,
   type ExistingSubjects,
   type HistorySource,
-  type HistoryView,
-  historyGroups,
   type SubjectKind,
-} from "@/lib/audit-text";
-import { requireAdmin } from "@/lib/dal/auth";
-import { db, type Tx } from "@/lib/db/client";
-import { auditEvents, kurse, profiles, termine } from "@/lib/db/schema";
+} from "@/lib/history-source";
 import { uuidSchema } from "@/lib/validation";
 
 /**
@@ -63,17 +64,17 @@ const PAGE_SIZE = 50;
 const cursorOf = sql<string>`to_char(${auditEvents.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
 /**
- * About PAGE_SIZE entries, never splitting an action: all of its entries share one
- * `created_at` (the transaction's `now()`), and a page always ends between two timestamps.
- * Without a `scope`, all entries.
+ * About PAGE_SIZE entries matching `filter`, never splitting an action: all of its entries
+ * share one `created_at` (the transaction's `now()`), and a page always ends between two
+ * timestamps. Without a `filter`, all entries.
  */
 async function historyPage(
-  scope: SQL | undefined,
+  filter: SQL | undefined,
   cursor?: string,
 ): Promise<HistoryPage> {
   const where = cursor
-    ? and(scope, lt(auditEvents.createdAt, sql`${cursor}::timestamptz`))
-    : scope;
+    ? and(filter, lt(auditEvents.createdAt, sql`${cursor}::timestamptz`))
+    : filter;
   const select = () =>
     db
       .select({ row: auditEvents, cursor: cursorOf })
@@ -94,9 +95,9 @@ async function historyPage(
   // The last action on this page continues past PAGE_SIZE: take all of it.
   const atBoundary = sql`${boundary}::timestamptz`;
   const [rest, older] = await Promise.all([
-    select().where(and(scope, eq(auditEvents.createdAt, atBoundary))),
+    select().where(and(filter, eq(auditEvents.createdAt, atBoundary))),
     select()
-      .where(and(scope, lt(auditEvents.createdAt, atBoundary)))
+      .where(and(filter, lt(auditEvents.createdAt, atBoundary)))
       .limit(1),
   ]);
   return {
@@ -119,22 +120,27 @@ const SUBJECT_FILTER: Record<SubjectKind, (id: string) => SQL> = {
     or(eq(auditEvents.profileId, id), eq(auditEvents.actorId, id)) as SQL,
 };
 
-const part = alias(auditEvents, "part");
+/** An entry of the same part of an action as the one being filtered. */
+const sibling = alias(auditEvents, "sibling");
 
 /**
  * Whole parts of actions (an action's entries on one Termin, or those on none) with an
  * entry of the Bereich, so a filtered group keeps its main entry and its consequences.
  */
 function inBereich(bereich: Bereich): SQL {
+  const { withoutTermin, onTermin } = bereichTypes(bereich);
   return exists(
     db
       .select({ one: sql`1` })
-      .from(part)
+      .from(sibling)
       .where(
         and(
-          eq(part.actionId, auditEvents.actionId),
-          sql`${part.terminId} is not distinct from ${auditEvents.terminId}`,
-          inArray(part.type, bereichTypes(bereich)),
+          eq(sibling.actionId, auditEvents.actionId),
+          sql`${sibling.terminId} is not distinct from ${auditEvents.terminId}`,
+          or(
+            and(isNull(sibling.terminId), inArray(sibling.type, withoutTermin)),
+            and(isNotNull(sibling.terminId), inArray(sibling.type, onTermin)),
+          ),
         ),
       ),
   );
@@ -173,28 +179,22 @@ export async function getHistory(
   cursor?: string,
 ): Promise<HistoryView> {
   await requireAdmin();
-  if (source.scope === "all") {
-    const page = await historyPage(
-      source.bereich && inBereich(source.bereich),
-      cursor,
-    );
-    return {
-      groups: historyGroups(
-        page.events,
-        "all",
-        await existingSubjects(page.events),
-      ),
-      nextCursor: page.nextCursor,
-    };
-  }
-  if (!uuidSchema.safeParse(source.id).success)
-    return { groups: [], nextCursor: null };
-  const page = await historyPage(
-    SUBJECT_FILTER[source.scope](source.id),
-    cursor,
-  );
+  const page = await historyPage(filterOf(source), cursor);
+  // Only the Verlauf page links to what each group is about.
+  const existing =
+    source.scope === "all" ? await existingSubjects(page.events) : undefined;
   return {
-    groups: historyGroups(page.events, source.scope),
+    groups: historyGroups(page.events, source.scope, existing),
     nextCursor: page.nextCursor,
   };
+}
+
+/** The entries `source` names; undefined for all of them. */
+function filterOf(source: HistorySource): SQL | undefined {
+  if (source.scope === "all") {
+    return source.bereich && inBereich(source.bereich);
+  }
+  // A malformed id (from the URL) names nothing; Postgres would reject comparing it.
+  if (!uuidSchema.safeParse(source.id).success) return sql`false`;
+  return SUBJECT_FILTER[source.scope](source.id);
 }

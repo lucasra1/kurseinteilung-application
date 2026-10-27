@@ -5,8 +5,13 @@ import { EmptyState } from "@/components/empty-state";
 import { FilterChips } from "@/components/filter-chips";
 import { HistoryList } from "@/components/history-list";
 import { SkeletonList } from "@/components/skeleton-list";
-import { BEREICH_LABEL, BEREICHE, type HistorySource } from "@/lib/audit-text";
 import { getHistory } from "@/lib/dal/audit";
+import { requireAdmin } from "@/lib/dal/auth";
+import {
+  BEREICH_LABEL,
+  BEREICHE,
+  type HistorySource,
+} from "@/lib/history-source";
 import { firstParam, hrefWith } from "@/lib/url";
 
 export default function VerlaufPage({ searchParams }: PageProps<"/verlauf">) {
@@ -17,10 +22,11 @@ export default function VerlaufPage({ searchParams }: PageProps<"/verlauf">) {
   );
 }
 
-/** Everything that happened, newest first; admins only (via `getHistory`). */
+/** Everything that happened, newest first; admins only. */
 async function Verlauf({
   searchParams,
 }: Pick<PageProps<"/verlauf">, "searchParams">) {
+  await requireAdmin();
   const param = firstParam((await searchParams).bereich);
   const bereich = BEREICHE.find((b) => b === param);
   const source: HistorySource = { scope: "all", bereich };

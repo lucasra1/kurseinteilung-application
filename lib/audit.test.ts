@@ -729,7 +729,6 @@ describe("staffingEvents for Ausschreibung", () => {
           termin: T1_SNAPSHOT,
           kind: "instruktor",
           places: 1,
-          angeschrieben: ["Ben Maier", "Clara Ott"],
           recipients: [
             { profileId: BEN.id, personName: "Ben Maier" },
             { profileId: CLARA.id, personName: "Clara Ott" },
@@ -765,9 +764,10 @@ describe("staffingEvents for Ausschreibung", () => {
           terminId: "t1",
           kind: "instruktor",
           places: 1,
-          // As the DAL might load them: the address must not reach the Verlauf.
+          // With more than ID and name: the address must not reach the Verlauf.
           recipients: [BEN, CLARA].map((p) => ({
-            ...p,
+            profileId: p.id,
+            personName: p.fullName,
             email: `${p.id}@example.org`,
           })),
         },
@@ -796,7 +796,6 @@ describe("staffingEvents for Ausschreibung", () => {
           termin: T1_SNAPSHOT,
           kind: "instruktor",
           places: 1,
-          angeschrieben: 2,
           recipients: [
             { profileId: BEN.id, personName: "Ben Maier" },
             { profileId: CLARA.id, personName: "Clara Ott" },

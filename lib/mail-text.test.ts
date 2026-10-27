@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type Recipient,
   type StaffingAction,
   type StaffingTermin,
   staffingEvents,
@@ -8,9 +9,9 @@ import {
 import {
   adminMail,
   gebrauchtMail,
+  MAIL_GROUPS,
   platzFreiMail,
   type StaffingMail,
-  staffingMails,
 } from "@/lib/mail-text";
 import type { Aufruf, AusschreibungPlan, Kind, Role } from "@/lib/staffing";
 
@@ -21,7 +22,12 @@ const BEN = { id: "ben", fullName: "Ben Maier" };
 const APP_URL = "https://kurse.example.org";
 
 /** An Aufruf as `mutateStaffing` hands it to `staffingEvents`. */
-type Called = Aufruf<{ id: string; fullName: string }>;
+type Called = Aufruf<Recipient>;
+
+const recipient = (person: { id: string; fullName: string }): Recipient => ({
+  profileId: person.id,
+  personName: person.fullName,
+});
 const TODAY = "2026-10-27";
 
 const T1: StaffingTermin = {
@@ -75,6 +81,7 @@ function mail(
   return adminMail({
     actor: action.actor,
     entries,
+    before,
     after,
     today,
     appUrl: APP_URL,
@@ -538,8 +545,8 @@ describe("adminMail for Aufruf", () => {
       kind: "instruktor",
       places: 1,
       recipients: Array.from({ length: n }, (_, i) => ({
-        id: `q${i}`,
-        fullName: `Qualifizierte:r ${i}`,
+        profileId: `q${i}`,
+        personName: `Qualifizierte:r ${i}`,
       })),
     },
   ];
@@ -642,12 +649,15 @@ describe("gebrauchtMail", () => {
   });
 });
 
-describe("staffingMails", () => {
+describe("MAIL_GROUPS", () => {
   const CLARA = { id: "clara", fullName: "Clara Ott" };
   const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
   const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
 
-  /** Every mail of an action, with entries built the way mutateStaffing builds them. */
+  /**
+   * Every mail of an action, group by group in sending order, with entries built the way
+   * mutateStaffing builds them.
+   */
   function mails(
     action: StaffingAction,
     before: TerminState[],
@@ -660,13 +670,15 @@ describe("staffingMails", () => {
   ) {
     const { plans, aufrufe, today = TODAY } = opts;
     const entries = staffingEvents({ action, before, after, plans, aufrufe });
-    return staffingMails({
+    const input = {
       actor: action.actor,
       entries,
+      before,
       after,
       today,
       appUrl: APP_URL,
-    });
+    };
+    return MAIL_GROUPS.flatMap((group) => group.build(input));
   }
 
   /** Who gets which mail, in sending order. */
@@ -818,7 +830,7 @@ describe("staffingMails", () => {
                 terminId: "t1",
                 kind: "instruktor",
                 places: 1,
-                recipients: [BEN, CLARA],
+                recipients: [BEN, CLARA].map(recipient),
               },
             ],
           },
@@ -1037,7 +1049,7 @@ describe("staffingMails", () => {
                 terminId: "t2",
                 kind: "praxisanleiter",
                 places: 1,
-                recipients: [CLARA],
+                recipients: [recipient(CLARA)],
               },
             ],
           },
@@ -1132,6 +1144,49 @@ describe("staffingMails", () => {
         ],
       ]);
     });
+  });
+
+  it("tells those whose role changed in signup order, not the moved person first", () => {
+    expect(
+      sent(
+        mails(
+          {
+            type: "signup.moved",
+            actor: LEA,
+            target: { terminId: "t1", profileId: CLARA.id },
+            direction: "up",
+          },
+          [
+            state(T1, [
+              signup(BEN, "instruktor", 1, "instruktor"),
+              signup(CLARA, "instruktor", 2, "backup-instruktor"),
+            ]),
+          ],
+          [
+            state(T1, [
+              signup(CLARA, "instruktor", 1, "instruktor"),
+              signup(BEN, "instruktor", 2, "backup-instruktor"),
+            ]),
+          ],
+        ),
+      ),
+    ).toEqual([
+      [
+        "betroffene",
+        BEN.id,
+        "Neue Rolle: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      ],
+      [
+        "betroffene",
+        CLARA.id,
+        "Neue Rolle: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      ],
+      [
+        "admins",
+        "alle Koordinator:innen",
+        "Besetzung geändert: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      ],
+    ]);
   });
 
   it("tells everyone on a deleted Termin they're off it", () => {

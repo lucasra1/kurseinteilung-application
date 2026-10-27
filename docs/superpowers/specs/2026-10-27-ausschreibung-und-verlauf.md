@@ -170,7 +170,7 @@ Nur Koordinator:innen, jeweils Neuestes oben, 50 Einträge, dann „Mehr anzeige
 - **Termin-Panel**: zugeklappter Abschnitt „Verlauf“ unten.
 - **Kurs-Seite** (`/kurse/[id]`): Abschnitt „Verlauf“ mit allem zum Kurs und seinen Terminen, auch gelöschten.
 - **Personen**: Tippen auf eine Person öffnet ein Sheet mit ihrem Verlauf: was mit ihr passiert ist und was sie selbst getan hat.
-- **Verlauf** (`/verlauf`, eigener Navigationspunkt, am Handy in der Tab-Leiste): alle Einträge, nach Aktion gruppiert. Jede Gruppe nennt Termin, Kurs oder Person und verlinkt dorthin, solange es sie noch gibt (Termin-Panel, Kurs-Seite, Personen-Sheet). Filter-Chips: Alle / Besetzung / Termine & Kurse / Personen.
+- **Verlauf** (`/verlauf`, eigener Navigationspunkt, am Handy in der Tab-Leiste): alle Einträge, nach Aktion gruppiert. Jede Gruppe nennt Termin, Kurs oder Person und verlinkt dorthin, solange es sie noch gibt (Termin-Panel, Kurs-Seite, Personen-Sheet). Filter-Chips nach Bereich: Alle / Besetzung / Termine & Kurse / Personen. Zur Besetzung zählt jede Aktion, die eine Eintragung geändert hat, also auch eine entfernte Person oder ein gelöschter Termin oder Kurs, solange dort jemand eingetragen war.
 
 Darstellung als Sätze; Folgen derselben Aktion stehen eingerückt darunter:
 
