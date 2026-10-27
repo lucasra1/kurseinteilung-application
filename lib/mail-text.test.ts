@@ -8,9 +8,9 @@ import {
 import {
   adminMail,
   gebrauchtMail,
+  MAIL_GROUPS,
   platzFreiMail,
   type StaffingMail,
-  staffingMails,
 } from "@/lib/mail-text";
 import type { Aufruf, AusschreibungPlan, Kind, Role } from "@/lib/staffing";
 
@@ -643,12 +643,15 @@ describe("gebrauchtMail", () => {
   });
 });
 
-describe("staffingMails", () => {
+describe("MAIL_GROUPS", () => {
   const CLARA = { id: "clara", fullName: "Clara Ott" };
   const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
   const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
 
-  /** Every mail of an action, with entries built the way mutateStaffing builds them. */
+  /**
+   * Every mail of an action, group by group in sending order, with entries built the way
+   * mutateStaffing builds them.
+   */
   function mails(
     action: StaffingAction,
     before: TerminState[],
@@ -661,14 +664,15 @@ describe("staffingMails", () => {
   ) {
     const { plans, aufrufe, today = TODAY } = opts;
     const entries = staffingEvents({ action, before, after, plans, aufrufe });
-    return staffingMails({
+    const input = {
       actor: action.actor,
       entries,
       before,
       after,
       today,
       appUrl: APP_URL,
-    });
+    };
+    return MAIL_GROUPS.flatMap((group) => group.build(input));
   }
 
   /** Who gets which mail, in sending order. */
