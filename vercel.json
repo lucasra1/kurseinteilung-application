@@ -1,4 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm db:migrate && pnpm build",
+  "regions": ["dub1"],
   "crons": [{ "path": "/api/keepalive", "schedule": "0 6 * * *" }]
 }

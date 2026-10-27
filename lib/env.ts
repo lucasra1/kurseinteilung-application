@@ -23,4 +23,8 @@ const envSchema = z.object({
   CRON_SECRET: z.string().min(1),
 });
 
-export const env = envSchema.parse(process.env);
+export const env = envSchema.parse({
+  ...process.env,
+  // On Vercel, the Supabase integration provides the transaction pooler URL as POSTGRES_URL.
+  DATABASE_URL: process.env.DATABASE_URL || process.env.POSTGRES_URL,
+});

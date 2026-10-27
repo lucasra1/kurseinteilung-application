@@ -12,5 +12,9 @@ export default defineConfig({
   dialect: "postgresql",
   casing: "snake_case",
   schemaFilter: ["app"],
-  dbCredentials: { url: process.env.DATABASE_URL as string },
+  // On Vercel, migrations run during the build over the session pooler from the Supabase integration.
+  dbCredentials: {
+    url: (process.env.POSTGRES_URL_NON_POOLING ||
+      process.env.DATABASE_URL) as string,
+  },
 });

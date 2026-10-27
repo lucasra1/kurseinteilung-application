@@ -41,27 +41,21 @@ Domain bei Cloudflare kaufen, z. B. `kurseinteilung.org`. Den Namen „Rotes Kre
 
 ### 3. Supabase-Projekt
 
-1. Neues Projekt auf supabase.com anlegen (Region z. B. Frankfurt), Datenbank-Passwort notieren.
+1. Neues Projekt auf supabase.com anlegen und über **Integrations → Vercel** mit dem Vercel-Projekt verbinden. Die Integration legt in Vercel u. a. `POSTGRES_URL` (App), `POSTGRES_URL_NON_POOLING` (Migrationen), `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` und `SUPABASE_SECRET_KEY` an. Die Region muss zu `regions` in [`vercel.json`](vercel.json) passen (derzeit `dub1` ↔ Supabase `eu-west-1`).
 2. **Authentication → Sign In / Providers**: „Allow new users to sign up“ **aus**. Den Provider **Email** eingeschaltet lassen (sonst gehen keine Magic Links).
 3. **Authentication → Emails → SMTP Settings**: Custom SMTP an, Host `smtp.resend.com`, Port `465`, User `resend`, Passwort = Resend-API-Key, Absender z. B. `noreply@mail.<domain>`.
 4. **Authentication → Emails → Templates → Magic Link**: Betreff `Dein Login-Link für die Kurseinteilung`, Inhalt aus [`supabase/templates/magic-link.html`](supabase/templates/magic-link.html) kopieren.
 5. **Authentication → URL Configuration**: Site URL `https://<domain>`, Redirect URL `https://<domain>/auth/confirm`.
 6. **Authentication → Rate Limits**: E-Mail-Limit auf z. B. 100 pro Stunde erhöhen.
 7. **Data API** in den Projekteinstellungen ausschalten (die App greift direkt auf Postgres zu; die Tabellen liegen ohnehin im nicht freigegebenen Schema `app`).
-8. Über **Connect** die Verbindungs-URLs holen:
-   - **Transaction pooler** (Port 6543) → `DATABASE_URL` in Vercel
-   - **Session pooler** (Port 5432) → nur für Migrationen
-9. Unter **Project Settings → API Keys** den Publishable Key und einen Secret Key kopieren.
-10. Migrationen einspielen:
-    ```bash
-    DATABASE_URL="<session-pooler-url>" pnpm db:migrate
-    ```
+
+Migrationen laufen bei jedem Vercel-Build automatisch (`buildCommand` in [`vercel.json`](vercel.json)).
 
 ### 4. Vercel
 
 1. Auf vercel.com **Add New → Project**, das GitHub-Repo importieren (Framework: Next.js).
-2. Environment Variables setzen (siehe [`.env.example`](.env.example)):
-   `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `RESEND_API_KEY`, `EMAIL_FROM` (z. B. `Kurseinteilung <noreply@mail.<domain>>`), `APP_URL` (`https://<domain>`), `ADMIN_EMAILS`, `CRON_SECRET` (beliebiger langer Zufallswert).
+2. Zusätzlich zu den Variablen der Supabase-Integration setzen (siehe [`.env.example`](.env.example)):
+   `RESEND_API_KEY`, `EMAIL_FROM` (z. B. `Kurseinteilung <noreply@mail.<domain>>`), `APP_URL` (`https://<domain>`), `ADMIN_EMAILS`, `CRON_SECRET` (beliebiger langer Zufallswert, als „Sensitive“).
 3. Deployen. Jeder Push auf `main` deployt automatisch.
 4. **Settings → Domains**: `<domain>` hinzufügen und den angezeigten DNS-Eintrag in Cloudflare anlegen, mit Proxy-Status **DNS only** (graue Wolke).
 5. Der tägliche Cron-Job aus [`vercel.json`](vercel.json) ruft `/api/keepalive` auf. Vercel schickt `CRON_SECRET` automatisch mit.
