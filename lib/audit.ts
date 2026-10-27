@@ -381,9 +381,14 @@ function roleOn(state: TerminState | undefined, profileId: string) {
   return state?.signups.find((s) => s.profileId === profileId)?.role ?? null;
 }
 
-function terminChanges(was: StaffingTermin, now: StaffingTermin) {
-  const changes: TerminChanges = {};
-  for (const field of TERMIN_FIELDS) {
+/** `{ field: [old, new] }` for each of `fields` that differs between `was` and `now`. */
+function changedFields<T, K extends keyof T>(
+  was: T,
+  now: T,
+  fields: readonly K[],
+): { [P in K]?: [T[P], T[P]] } {
+  const changes: { [P in K]?: [T[P], T[P]] } = {};
+  for (const field of fields) {
     if (was[field] !== now[field]) changes[field] = [was[field], now[field]];
   }
   return changes;
@@ -423,7 +428,11 @@ function mainEntry(
       return { type: action.type, ...refs, profileId, data };
     }
     case "termin.updated": {
-      const changes = terminChanges(on.was.termin, (on.now ?? on.was).termin);
+      const changes: TerminChanges = changedFields(
+        on.was.termin,
+        (on.now ?? on.was).termin,
+        TERMIN_FIELDS,
+      );
       return { type: action.type, ...refs, data: { termin, changes } };
     }
     case "termin.deleted":
@@ -485,10 +494,10 @@ export function kursUpdatedEvents(
   was: KursFields,
   now: KursFields,
 ): AuditEntry[] {
-  const changes: KursChanges = {};
-  for (const field of ["title", "description"] as const) {
-    if (was[field] !== now[field]) changes[field] = [was[field], now[field]];
-  }
+  const changes: KursChanges = changedFields(was, now, [
+    "title",
+    "description",
+  ] as const);
   if (Object.keys(changes).length === 0) return [];
   return [
     {
@@ -507,11 +516,14 @@ export function personUpdatedEvents(
   was: PersonFields,
   now: PersonFields,
 ): AuditEntry[] {
-  const changes: PersonChanges = {};
-  if (was.fullName !== now.fullName) {
-    changes.fullName = [was.fullName, now.fullName];
-  }
-  if (was.phone !== now.phone) changes.phone = true;
+  const { fullName, phone } = changedFields(was, now, [
+    "fullName",
+    "phone",
+  ] as const);
+  const changes: PersonChanges = {
+    ...(fullName && { fullName }),
+    ...(phone && { phone: true }),
+  };
   if (Object.keys(changes).length === 0) return [];
   return [
     {
