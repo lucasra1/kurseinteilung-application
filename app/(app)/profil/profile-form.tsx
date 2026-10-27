@@ -45,7 +45,8 @@ export function ProfileForm({
           aria-describedby="phone-hint"
         />
         <span id="phone-hint" className="text-[13px] text-muted-foreground">
-          Sehen nur Admins, falls kurzfristig etwas ist.
+          Sehen nur Praxisanleiterkoordinator:innen, falls kurzfristig etwas
+          ist.
         </span>
       </div>
       <div className="flex flex-col gap-1.5">
