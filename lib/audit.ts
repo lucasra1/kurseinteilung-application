@@ -12,6 +12,7 @@
  * be gone by then. It never contains e-mail addresses or phone numbers.
  */
 import {
+  type Aufruf,
   type AusschreibungPlan,
   type Kind,
   type Qualifications,
@@ -82,6 +83,16 @@ export type AuditData = {
     places: number;
     angeschrieben: string[];
   };
+  /**
+   * A consequence: `places` of `kind` missing without a backup; `angeschrieben` is how many
+   * qualified got "Du wirst gebraucht".
+   */
+  "place.aufruf": {
+    termin: TerminSnapshot;
+    kind: Kind;
+    places: number;
+    angeschrieben: number;
+  };
   "termin.updated": { termin: TerminSnapshot; changes: TerminChanges };
   "termin.deleted": { termin: TerminSnapshot };
   /** One per selected Termin whose manual flag was set. */
@@ -130,6 +141,7 @@ export type AuditType = keyof AuditData;
 const CONSEQUENCES: ReadonlySet<AuditType> = new Set([
   "signup.role_changed",
   "place.ausgeschrieben",
+  "place.aufruf",
 ]);
 
 /** Entry types that only follow from an action's main entry, never stand for it. */
@@ -240,7 +252,8 @@ export type TerminState = { termin: StaffingTermin; signups: StaffingSignup[] };
 /**
  * The entries a staffing action writes (see the top of this file). `before` holds the
  * locked Termine, `after` the same ones afterwards (deleted ones missing). Per Termin: the
- * main entry, the role changes of others, then the places the action ausgeschrieben.
+ * main entry, the role changes of others, then the places the action ausgeschrieben, then
+ * its Aufrufe.
  */
 export function staffingEvents(input: {
   action: StaffingAction;
@@ -248,6 +261,8 @@ export function staffingEvents(input: {
   after: TerminState[];
   /** What `planAusschreibung` decided per Termin. */
   plans?: AusschreibungPlan[];
+  /** The Aufrufe of those plans, with the qualified written to (see `aufrufe`). */
+  aufrufe?: Aufruf<unknown>[];
   /** The target person's name, needed when they're on none of the Termine. */
   targetName?: string;
   /** The target Kurs' title, needed when it has no Termine. */
@@ -332,7 +347,15 @@ export function staffingEvents(input: {
             ]
           : [],
     );
-    return [main, ...consequences, ...ausgeschrieben];
+    const aufrufe: AuditEntry[] = (input.aufrufe ?? [])
+      .filter((aufruf) => aufruf.terminId === was.termin.id)
+      .map(({ kind, places, recipients }) => ({
+        type: "place.aufruf",
+        ...refs,
+        profileId: null,
+        data: { termin, kind, places, angeschrieben: recipients.length },
+      }));
+    return [main, ...consequences, ...ausgeschrieben, ...aufrufe];
   });
 }
 

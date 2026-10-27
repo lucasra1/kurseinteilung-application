@@ -563,6 +563,46 @@ describe("auditSentence for Ausschreibung", () => {
     );
   });
 
+  const aufruf = (places: number, angeschrieben: number) =>
+    event(LEA, {
+      type: "place.aufruf",
+      data: { termin, kind: "instruktor", places, angeschrieben },
+    });
+
+  it("says the place lacks a backup and how many qualified were written to", () => {
+    expect(auditSentence(aufruf(1, 14))).toBe(
+      "1 Instruktor-Platz fehlt, kein Backup: 14 Qualifizierte angeschrieben",
+    );
+    expect(auditSentence(aufruf(2, 1))).toBe(
+      "2 Instruktor-Plätze fehlen, kein Backup: 1 qualifizierte Person angeschrieben",
+    );
+  });
+
+  it("shows the Aufruf below the action, whatever order the entries come back in", () => {
+    const removed = event(ANNA, {
+      type: "signup.removed",
+      profileId: ANNA.id,
+      data: { termin, personName: ANNA.name, from: "instruktor", to: null },
+    });
+
+    expect(historyGroups([aufruf(1, 14), removed])).toEqual([
+      {
+        actionId: "a1",
+        time: "Sa., 31.10., 14:05",
+        text: "Anna Huber hat sich ausgetragen (Instruktor)",
+        consequences: [
+          "1 Instruktor-Platz fehlt, kein Backup: 14 Qualifizierte angeschrieben",
+        ],
+      },
+    ]);
+  });
+
+  it("says so when there was nobody else to write to", () => {
+    expect(auditSentence(aufruf(1, 0))).toBe(
+      "1 Instruktor-Platz fehlt, kein Backup und sonst niemand qualifiziert",
+    );
+  });
+
   it("says who took the place", () => {
     expect(
       auditSentence(

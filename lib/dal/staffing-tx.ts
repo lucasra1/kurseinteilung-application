@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import {
   explicitlyPlaced,
   type StaffingAction,
@@ -13,12 +13,15 @@ import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import { DomainError } from "@/lib/errors";
 import {
+  type Gebraucht,
   type PlatzFrei,
   type StaffingChange,
   sendStaffingNotifications,
 } from "@/lib/notifications";
 import {
+  type Aufruf,
   type AusschreibungPlan,
+  aufrufe,
   ausgeschrieben,
   diffRoles,
   hasQualification,
@@ -196,6 +199,58 @@ function planTermine(
   });
 }
 
+/** Someone an Aufruf writes to. */
+type AufrufRecipient = { id: string; fullName: string; email: string };
+
+/**
+ * The Aufrufe the plans trigger, each with the qualified who get "Du wirst gebraucht"
+ * (see `aufrufe`); `recipients.length` is how many. Reads the profiles only if there is an
+ * Aufruf. Writes nothing, so a confirmation can count the recipients before anything is
+ * written.
+ */
+async function resolveAufrufe(
+  tx: Tx,
+  action: StaffingAction,
+  plans: AusschreibungPlan[],
+  signupsBefore: SignupRow[],
+  signupsAfter: SignupRow[],
+): Promise<Aufruf<AufrufRecipient>[]> {
+  const kinds = new Set(
+    triggered(plans)
+      .filter(({ trigger }) => trigger.type === "aufruf")
+      .map(({ kind }) => kind),
+  );
+  if (kinds.size === 0) return [];
+  const people = await tx
+    .select({
+      id: profiles.id,
+      fullName: profiles.fullName,
+      email: profiles.email,
+      isInstruktor: profiles.isInstruktor,
+      isPraxisanleiter: profiles.isPraxisanleiter,
+    })
+    .from(profiles)
+    .where(
+      or(
+        ...[...kinds].map((kind) =>
+          eq(
+            kind === "instruktor"
+              ? profiles.isInstruktor
+              : profiles.isPraxisanleiter,
+            true,
+          ),
+        ),
+      ),
+    );
+  return aufrufe({
+    plans,
+    people,
+    before: signupsBefore,
+    after: signupsAfter,
+    actorId: action.actor.id,
+  });
+}
+
 /** Writes the planned counters; returns the Termine with them. */
 async function writeCounters(
   tx: Tx,
@@ -254,8 +309,16 @@ export async function mutateStaffing<T>(opts: {
       signupsBefore,
       signupsAfter,
     );
+    const calls = await resolveAufrufe(
+      tx,
+      action,
+      plans,
+      signupsBefore,
+      signupsAfter,
+    );
     // Nothing of the rule is written yet: a check on `triggered(plans)` that throws here
     // (e.g. a confirmation) rolls the whole action back, without counters, Verlauf or mails.
+    // `calls` says how many qualified an Aufruf would write to.
     const after = await writeCounters(tx, afterRun, plans);
 
     const rankedBefore = rankedByTermin(before, signupsBefore);
@@ -269,6 +332,7 @@ export async function mutateStaffing<T>(opts: {
       before: states(before, rankedBefore),
       after: afterStates,
       plans,
+      aufrufe: calls,
       ...names,
     });
     await logEvents(tx, action.actor, entries);
@@ -287,6 +351,7 @@ export async function mutateStaffing<T>(opts: {
       changes,
       entries,
       plans,
+      calls,
       afterStates,
       before,
       after,
@@ -323,12 +388,20 @@ export async function mutateStaffing<T>(opts: {
     },
   );
 
+  const gebraucht: Gebraucht[] = out.calls.flatMap(
+    ({ terminId, recipients, ...call }) => {
+      const termin = out.after.get(terminId);
+      return termin ? [{ termin, recipients, ...call }] : [];
+    },
+  );
+
   await sendStaffingNotifications({
     actor: action.actor,
     entries: out.entries,
     after: out.afterStates,
     changes: enriched,
     platzFrei,
+    gebraucht,
   });
   return out.result;
 }

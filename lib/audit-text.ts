@@ -124,6 +124,14 @@ export function auditSentence(event: AuditEvent): string {
         ? `${held}, angeschrieben: ${angeschrieben.join(", ")}`
         : held;
     }
+    case "place.aufruf": {
+      const { kind, places, angeschrieben } = event.data;
+      const missing = `${placesLabel(places, kind)} ${places === 1 ? "fehlt" : "fehlen"}`;
+      if (angeschrieben === 0) {
+        return `${missing}, kein Backup und sonst niemand qualifiziert`;
+      }
+      return `${missing}, kein Backup: ${qualifiedCount(angeschrieben)} angeschrieben`;
+    }
     case "kurs.created":
       return `${actor} hat den Kurs „${event.data.kursTitle}“ angelegt`;
     // The Termin panel, or the Termin label on the Kurs page, says which Termin.
@@ -165,6 +173,11 @@ export function auditSentence(event: AuditEvent): string {
       return `${actor} hat ${whom(event, personName)} die Rolle ${COORDINATOR.one} ${granted ? "gegeben" : "entzogen"}`;
     }
   }
+}
+
+/** "14 Qualifizierte", "1 qualifizierte Person" */
+export function qualifiedCount(n: number): string {
+  return n === 1 ? "1 qualifizierte Person" : `${n} Qualifizierte`;
 }
 
 const EXCERPT_LENGTH = 50;
