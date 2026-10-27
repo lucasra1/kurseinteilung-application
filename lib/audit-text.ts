@@ -1,7 +1,7 @@
-// German sentences for Verlauf entries (and later the mails built from them). Pure.
+// German sentences for Verlauf entries, grouped by action for display; the mails reuse the
+// sentences. Pure.
 import {
   type AuditEvent,
-  type AuditType,
   isConsequence,
   type RoleShift,
   TERMIN_FIELDS,
@@ -9,6 +9,12 @@ import {
   type TerminSnapshot,
 } from "@/lib/audit";
 import { formatDate, formatTime } from "@/lib/dates";
+import {
+  type ExistingSubjects,
+  type HistoryScope,
+  type SubjectKind,
+  subjectHref,
+} from "@/lib/history-source";
 import {
   hasQualification,
   isBackup,
@@ -18,7 +24,6 @@ import {
   placesLabel,
   type Role,
 } from "@/lib/staffing";
-import { hrefWith } from "@/lib/url";
 import { COORDINATOR, countOf } from "@/lib/wording";
 
 /** "Instruktor", "Backup Praxisanleiter" */
@@ -229,11 +234,6 @@ export function formatAuditTime(at: Date): string {
   return `${part.weekday}, ${part.day}.${part.month}., ${part.hour}:${part.minute}`;
 }
 
-/** What an entry can be about, and whose Verlauf a panel, page or sheet shows. */
-export const SUBJECT_KINDS = ["termin", "kurs", "person"] as const;
-
-export type SubjectKind = (typeof SUBJECT_KINDS)[number];
-
 /** The Termin, Kurs or person a group is about, named as it was at the time. */
 export type HistorySubject = {
   kind: SubjectKind;
@@ -258,65 +258,6 @@ export type HistoryGroup = {
   text: string;
   consequences: string[];
 };
-
-/** Where a Verlauf is shown: a Termin's panel, a Kurs page, a person's sheet, or `/verlauf`. */
-export type HistoryScope = SubjectKind | "all";
-
-/** Which entries to read: those of one Termin, Kurs or person, or all (of one Bereich). */
-export type HistorySource =
-  | { scope: SubjectKind; id: string }
-  | { scope: "all"; bereich?: Bereich };
-
-/** Ids of the Termine, Kurse and people that still exist. */
-export type ExistingSubjects = Record<SubjectKind, ReadonlySet<string>>;
-
-const SUBJECT_HREF: Record<SubjectKind, (id: string) => string> = {
-  termin: (id) => hrefWith("/termine", { termin: id }),
-  kurs: (id) => `/kurse/${id}`,
-  person: (id) => hrefWith("/personen", { person: id }),
-};
-
-/** The filters on the Verlauf page, in chip order; every entry type belongs to one. */
-export const BEREICHE = ["besetzung", "termine-kurse", "personen"] as const;
-
-export type Bereich = (typeof BEREICHE)[number];
-
-export const BEREICH_LABEL: Record<Bereich, string> = {
-  besetzung: "Besetzung",
-  "termine-kurse": "Termine & Kurse",
-  personen: "Personen",
-};
-
-const BEREICH_OF: Record<AuditType, Bereich> = {
-  "signup.created": "besetzung",
-  "signup.removed": "besetzung",
-  "signup.moved": "besetzung",
-  "signup.role_changed": "besetzung",
-  "signup.claimed": "besetzung",
-  "signup.place_given": "besetzung",
-  "place.ausgeschrieben": "besetzung",
-  "place.aufruf": "besetzung",
-  "termin.created": "termine-kurse",
-  "termin.updated": "termine-kurse",
-  "termin.deleted": "termine-kurse",
-  "termin.festgeschrieben": "termine-kurse",
-  "termin.aufgehoben": "termine-kurse",
-  "kurs.created": "termine-kurse",
-  "kurs.updated": "termine-kurse",
-  "kurs.deleted": "termine-kurse",
-  "person.registered": "personen",
-  "person.updated": "personen",
-  "person.qualification_changed": "personen",
-  "person.koordination_changed": "personen",
-  "person.removed": "personen",
-};
-
-/** The entry types of a Bereich. */
-export function bereichTypes(bereich: Bereich): AuditType[] {
-  return (Object.keys(BEREICH_OF) as AuditType[]).filter(
-    (type) => BEREICH_OF[type] === bereich,
-  );
-}
 
 /** One page of a Verlauf; `nextCursor` loads the older entries, null if there are none. */
 export type HistoryView = { groups: HistoryGroup[]; nextCursor: string | null };
@@ -408,7 +349,7 @@ export function historyGroups(
         const about = subjectOf(part, scope);
         if (!about) return group(actionId, part);
         const linked = existing?.[about.kind].has(about.id)
-          ? { ...about, href: SUBJECT_HREF[about.kind](about.id) }
+          ? { ...about, href: subjectHref(about.kind, about.id) }
           : about;
         return { ...group(actionId, part), about: linked };
       });

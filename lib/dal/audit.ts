@@ -12,18 +12,17 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Actor, AuditEntry, AuditEvent } from "@/lib/audit";
+import { type HistoryView, historyGroups } from "@/lib/audit-text";
+import { requireAdmin } from "@/lib/dal/auth";
+import { db, type Tx } from "@/lib/db/client";
+import { auditEvents, kurse, profiles, termine } from "@/lib/db/schema";
 import {
   type Bereich,
   bereichTypes,
   type ExistingSubjects,
   type HistorySource,
-  type HistoryView,
-  historyGroups,
   type SubjectKind,
-} from "@/lib/audit-text";
-import { requireAdmin } from "@/lib/dal/auth";
-import { db, type Tx } from "@/lib/db/client";
-import { auditEvents, kurse, profiles, termine } from "@/lib/db/schema";
+} from "@/lib/history-source";
 import { uuidSchema } from "@/lib/validation";
 
 /**

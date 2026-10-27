@@ -3,13 +3,13 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { type DataResult, runQuery } from "@/lib/action-result";
+import type { HistoryView } from "@/lib/audit-text";
+import { getHistory } from "@/lib/dal/audit";
 import {
   BEREICHE,
   type HistorySource,
-  type HistoryView,
   SUBJECT_KINDS,
-} from "@/lib/audit-text";
-import { getHistory } from "@/lib/dal/audit";
+} from "@/lib/history-source";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { uuidSchema } from "@/lib/validation";
 
