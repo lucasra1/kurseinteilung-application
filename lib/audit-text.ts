@@ -2,6 +2,8 @@
 // sentences. Pure.
 import {
   type AuditEvent,
+  aufrufCount,
+  ausgeschriebenTo,
   isConsequence,
   type RoleShift,
   TERMIN_FIELDS,
@@ -127,19 +129,21 @@ export function auditSentence(event: AuditEvent): string {
       return `${actor} hat ${whom(event, personName)} den Platz gegeben${roleSuffix(from, to)}`;
     }
     case "place.ausgeschrieben": {
-      const { kind, places, angeschrieben } = event.data;
+      const { kind, places } = event.data;
+      const names = ausgeschriebenTo(event.data);
       const text = `${placesLabel(places, kind)} ausgeschrieben`;
-      return angeschrieben.length > 0
-        ? `${text}, angeschrieben: ${angeschrieben.join(", ")}`
+      return names.length > 0
+        ? `${text}, angeschrieben: ${names.join(", ")}`
         : text;
     }
     case "place.aufruf": {
-      const { kind, places, angeschrieben } = event.data;
+      const { kind, places } = event.data;
+      const count = aufrufCount(event.data);
       const missing = `${placesLabel(places, kind)} ${places === 1 ? "fehlt" : "fehlen"}`;
-      if (angeschrieben === 0) {
+      if (count === 0) {
         return `${missing}, kein Backup und sonst niemand qualifiziert`;
       }
-      return `${missing}, kein Backup: ${qualifiedCount(angeschrieben)} angeschrieben`;
+      return `${missing}, kein Backup: ${qualifiedCount(count)} angeschrieben`;
     }
     case "kurs.created":
       return `${actor} hat den Kurs „${event.data.kursTitle}“ angelegt`;

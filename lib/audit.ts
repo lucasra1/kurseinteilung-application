@@ -48,8 +48,20 @@ export type TerminChanges = Partial<
   Record<TerminField, [string | number | null, string | number | null]>
 >;
 
-/** Someone a mail went to, by ID and name: the address is looked up when sending. */
+/** Someone a mail goes to, by ID and name: the address is looked up when sending. */
 export type Recipient = { profileId: string; personName: string };
+
+/** The names of the backups an Ausschreibung wrote to, from older entries too. */
+export function ausgeschriebenTo(
+  data: AuditData["place.ausgeschrieben"],
+): string[] {
+  return data.recipients?.map((r) => r.personName) ?? data.angeschrieben ?? [];
+}
+
+/** How many qualified an Aufruf wrote to, from older entries too. */
+export function aufrufCount(data: AuditData["place.aufruf"]): number {
+  return data.recipients?.length ?? data.angeschrieben ?? 0;
+}
 
 /** `data` per event type. */
 export type AuditData = {
@@ -66,28 +78,28 @@ export type AuditData = {
   /** An admin gave a backup an ausgeschriebenen place (Backup → role). */
   "signup.place_given": { termin: TerminSnapshot } & RoleShift;
   /**
-   * A consequence: `places` of `kind` ausgeschrieben; `angeschrieben` are the names of the
-   * backups who got "Platz frei".
+   * A consequence: `places` of `kind` ausgeschrieben; `recipients` are the backups who got
+   * "Platz frei". Read with `ausgeschriebenTo`.
    */
   "place.ausgeschrieben": {
     termin: TerminSnapshot;
     kind: Kind;
     places: number;
-    angeschrieben: string[];
-    /** For the mails; missing on entries written before #12. */
     recipients?: Recipient[];
+    /** Instead of `recipients` on older entries: only the backups' names. */
+    angeschrieben?: string[];
   };
   /**
-   * A consequence: `places` of `kind` missing without a backup; `angeschrieben` is how many
-   * qualified got "Du wirst gebraucht".
+   * A consequence: `places` of `kind` missing without a backup; `recipients` are the
+   * qualified who got "Du wirst gebraucht". Read with `aufrufCount`.
    */
   "place.aufruf": {
     termin: TerminSnapshot;
     kind: Kind;
     places: number;
-    angeschrieben: number;
-    /** For the mails; missing on entries written before #12. */
     recipients?: Recipient[];
+    /** Instead of `recipients` on older entries: only how many were written to. */
+    angeschrieben?: number;
   };
   "termin.updated": { termin: TerminSnapshot; changes: TerminChanges };
   "termin.deleted": { termin: TerminSnapshot };
@@ -247,7 +259,7 @@ export function staffingEvents(input: {
   /** What `planAusschreibung` decided per Termin. */
   plans?: AusschreibungPlan[];
   /** The Aufrufe of those plans, with the qualified written to (see `planAufrufe`). */
-  aufrufe?: Aufruf<{ id: string; fullName: string }>[];
+  aufrufe?: Aufruf<Recipient>[];
   /** The target person's name, needed when they're on none of the Termine. */
   targetName?: string;
   /** The target Kurs' title, needed when it has no Termine. */
@@ -325,13 +337,7 @@ export function staffingEvents(input: {
             type: "place.ausgeschrieben",
             ...refs,
             profileId: null,
-            data: {
-              termin,
-              kind,
-              places: trigger.places,
-              angeschrieben: recipients.map((r) => r.personName),
-              recipients,
-            },
+            data: { termin, kind, places: trigger.places, recipients },
           },
         ];
       },
@@ -346,10 +352,10 @@ export function staffingEvents(input: {
           termin,
           kind,
           places,
-          angeschrieben: recipients.length,
-          recipients: recipients.map(({ id, fullName }) => ({
-            profileId: id,
-            personName: fullName,
+          // Only ID and name, whatever else the caller loaded.
+          recipients: recipients.map(({ profileId, personName }) => ({
+            profileId,
+            personName,
           })),
         },
       }));

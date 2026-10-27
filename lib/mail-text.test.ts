@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type Recipient,
   type StaffingAction,
   type StaffingTermin,
   staffingEvents,
@@ -21,7 +22,12 @@ const BEN = { id: "ben", fullName: "Ben Maier" };
 const APP_URL = "https://kurse.example.org";
 
 /** An Aufruf as `mutateStaffing` hands it to `staffingEvents`. */
-type Called = Aufruf<{ id: string; fullName: string }>;
+type Called = Aufruf<Recipient>;
+
+const recipient = (person: { id: string; fullName: string }): Recipient => ({
+  profileId: person.id,
+  personName: person.fullName,
+});
 const TODAY = "2026-10-27";
 
 const T1: StaffingTermin = {
@@ -539,8 +545,8 @@ describe("adminMail for Aufruf", () => {
       kind: "instruktor",
       places: 1,
       recipients: Array.from({ length: n }, (_, i) => ({
-        id: `q${i}`,
-        fullName: `Qualifizierte:r ${i}`,
+        profileId: `q${i}`,
+        personName: `Qualifizierte:r ${i}`,
       })),
     },
   ];
@@ -824,7 +830,7 @@ describe("MAIL_GROUPS", () => {
                 terminId: "t1",
                 kind: "instruktor",
                 places: 1,
-                recipients: [BEN, CLARA],
+                recipients: [BEN, CLARA].map(recipient),
               },
             ],
           },
@@ -1043,7 +1049,7 @@ describe("MAIL_GROUPS", () => {
                 terminId: "t2",
                 kind: "praxisanleiter",
                 places: 1,
-                recipients: [CLARA],
+                recipients: [recipient(CLARA)],
               },
             ],
           },

@@ -1,11 +1,13 @@
 // German texts for staffing mails, built from the Verlauf entries of one action, so mail
 // and Verlauf say the same. Pure: callers pass APP_URL and today's date.
-import type {
-  Actor,
-  AuditEntry,
-  AuditEvent,
-  TerminSnapshot,
-  TerminState,
+import {
+  type Actor,
+  type AuditEntry,
+  type AuditEvent,
+  aufrufCount,
+  ausgeschriebenTo,
+  type TerminSnapshot,
+  type TerminState,
 } from "@/lib/audit";
 import { auditSentence, qualifiedCount } from "@/lib/audit-text";
 import { formatDate, formatTerminWhen } from "@/lib/dates";
@@ -109,18 +111,19 @@ function staffingSummary(state: TerminState): string {
 function consequenceLine(entry: AuditEntry, actor: Actor): string {
   switch (entry.type) {
     case "place.ausgeschrieben": {
-      const { kind, places, angeschrieben } = entry.data;
+      const { kind, places } = entry.data;
+      const names = ausgeschriebenTo(entry.data);
       const verb = places === 1 ? "ist" : "sind";
       const line = `– Der Termin ist festgeschrieben: ${placesLabel(places, kind)} ${verb} ausgeschrieben.`;
-      if (angeschrieben.length === 0) return line;
-      const who = angeschrieben.length === 1 ? "Backup" : "Backups";
-      return `${line} Angeschrieben: ${angeschrieben.join(", ")} (${who}).`;
+      if (names.length === 0) return line;
+      const who = names.length === 1 ? "Backup" : "Backups";
+      return `${line} Angeschrieben: ${names.join(", ")} (${who}).`;
     }
     case "place.aufruf": {
-      const { angeschrieben } = entry.data;
-      return angeschrieben === 0
+      const count = aufrufCount(entry.data);
+      return count === 0
         ? "– Kein Backup und sonst niemand qualifiziert."
-        : `– Kein Backup: ${qualifiedCount(angeschrieben)} angeschrieben.`;
+        : `– Kein Backup: ${qualifiedCount(count)} angeschrieben.`;
     }
     default:
       return `– ${auditSentence(asEvent(entry, actor))}.`;
