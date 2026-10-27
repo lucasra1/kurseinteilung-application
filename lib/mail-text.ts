@@ -175,18 +175,24 @@ export function adminMail(input: {
 
   const text = list.map((block) => {
     const now = input.after.find((s) => s.termin.id === block.terminId);
-    const lines = [
-      `„${block.termin.kursTitle} – ${block.termin.topic}“ am ${formatTerminWhen(block.termin)}`,
-      `${auditSentence(asEvent(block.main, actor))}.`,
-      ...block.consequences.map((entry) => consequenceLine(entry, actor)),
+    const paragraphs = [
+      `„${block.termin.kursTitle} – ${block.termin.topic}“ am ${formatTerminWhen(block.termin)}\n` +
+        `${auditSentence(asEvent(block.main, actor))}.`,
     ];
+    if (block.consequences.length > 0) {
+      paragraphs.push(
+        block.consequences
+          .map((entry) => consequenceLine(entry, actor))
+          .join("\n"),
+      );
+    }
     if (now) {
-      lines.push(
+      paragraphs.push(
         `Aktueller Stand: ${staffingSummary(now)}.`,
         `${input.appUrl}/termine?termin=${block.terminId}`,
       );
     }
-    return lines.join("\n");
+    return paragraphs.join("\n\n");
   });
 
   return {
