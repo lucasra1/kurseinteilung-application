@@ -18,7 +18,6 @@ import {
 import {
   diffRoles,
   hasQualification,
-  KINDS,
   type Kind,
   needed,
   type RoleSnapshot,
@@ -159,8 +158,8 @@ function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
 /**
  * Runs a change to the signups of some Termine in one transaction: locks the Termin rows
  * first (in id order, so concurrent changes queue up instead of deadlocking), diffs roles
- * before and after, writes the Verlauf for `action` (see lib/audit.ts) and sends
- * notifications after the commit.
+ * before and after, writes the Verlauf for `action` (see lib/audit.ts) and sends the mails
+ * built from it after the commit.
  */
 export async function mutateStaffing<T>(opts: {
   action: StaffingAction;
@@ -182,16 +181,15 @@ export async function mutateStaffing<T>(opts: {
     const rankedAfter = rankedByTermin(after, signupsAfter);
     const changes = diffRoles(snapshot(rankedBefore), snapshot(rankedAfter));
 
-    await logEvents(
-      tx,
-      action.actor,
-      staffingEvents({
-        action,
-        before: states(before, rankedBefore),
-        after: states(after, rankedAfter),
-        ...names,
-      }),
-    );
+    const afterStates = states(after, rankedAfter);
+    // Kept in memory for the mails: read back, entries of one action have no order.
+    const entries = staffingEvents({
+      action,
+      before: states(before, rankedBefore),
+      after: afterStates,
+      ...names,
+    });
+    await logEvents(tx, action.actor, entries);
 
     const changedIds = [...new Set(changes.map((c) => c.profileId))];
     const stillExisting =
@@ -205,9 +203,10 @@ export async function mutateStaffing<T>(opts: {
     return {
       result,
       changes,
+      entries,
+      afterStates,
       before,
       after,
-      rankedAfter,
       people: new Map(
         [...signupsBefore, ...signupsAfter].map((s) => [
           s.profileId,
@@ -228,20 +227,11 @@ export async function mutateStaffing<T>(opts: {
     return [{ ...change, termin, person }];
   });
 
-  const terminStateAfter = new Map(
-    [...out.rankedAfter].map(([terminId, list]) => [
-      terminId,
-      {
-        instruktor: list.filter((s) => s.role === "instruktor").length,
-        praxisanleiter: list.filter((s) => s.role === "praxisanleiter").length,
-        backups: list.filter((s) => !KINDS.includes(s.role as Kind)).length,
-      },
-    ]),
-  );
-
-  await sendStaffingNotifications(enriched, {
-    actorId: action.actor.id,
-    terminStateAfter,
+  await sendStaffingNotifications({
+    actor: action.actor,
+    entries: out.entries,
+    after: out.afterStates,
+    changes: enriched,
   });
   return out.result;
 }
