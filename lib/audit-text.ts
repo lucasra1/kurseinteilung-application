@@ -241,7 +241,12 @@ export type HistoryGroup = {
 };
 
 /** Where a Verlauf is shown: a Termin's panel, a Kurs page, or a person's sheet. */
-export type HistoryScope = "termin" | "kurs" | "person";
+export const HISTORY_SCOPES = ["termin", "kurs", "person"] as const;
+
+export type HistoryScope = (typeof HISTORY_SCOPES)[number];
+
+/** One page of a Verlauf; `nextCursor` loads the older entries, null if there are none. */
+export type HistoryView = { groups: HistoryGroup[]; nextCursor: string | null };
 
 function groupBy<K, T>(items: T[], keyOf: (item: T) => K): Map<K, T[]> {
   const groups = new Map<K, T[]>();

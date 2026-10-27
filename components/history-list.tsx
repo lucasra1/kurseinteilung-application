@@ -2,9 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import type { HistoryGroup } from "@/lib/audit-text";
-
-export type HistoryView = { groups: HistoryGroup[]; nextCursor: string | null };
+import type { DataResult } from "@/lib/action-result";
+import type { HistoryView } from "@/lib/audit-text";
 
 /**
  * Verlauf entries, newest first, with what followed from each action indented below and,
@@ -17,9 +16,10 @@ export function HistoryList({
   loadMore,
 }: {
   initial: HistoryView;
-  loadMore: (cursor: string) => Promise<HistoryView>;
+  loadMore: (cursor: string) => Promise<DataResult<HistoryView>>;
 }) {
   const [older, setOlder] = useState<HistoryView[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const pages = [initial, ...older];
   const groups = pages.flatMap((page) => page.groups);
@@ -73,13 +73,21 @@ export function HistoryList({
           disabled={pending}
           onClick={() =>
             startTransition(async () => {
-              const page = await loadMore(cursor);
-              startTransition(() => setOlder((pages) => [...pages, page]));
+              const result = await loadMore(cursor);
+              startTransition(() => {
+                setError(result.ok ? null : result.error);
+                if (result.ok) setOlder((pages) => [...pages, result.data]);
+              });
             })
           }
         >
           Mehr anzeigen
         </Button>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
       )}
     </div>
   );

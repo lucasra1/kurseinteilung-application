@@ -1,15 +1,15 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
+import { moreHistory } from "@/app/(app)/actions";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { HistoryList } from "@/components/history-list";
 import { SkeletonList } from "@/components/skeleton-list";
 import { TerminColumnHeads } from "@/components/termin-fields";
-import { historyGroups } from "@/lib/audit-text";
-import { kursHistory } from "@/lib/dal/audit";
+import { getHistory } from "@/lib/dal/audit";
 import { getAdminKurs } from "@/lib/dal/read-model";
 import { formatTime, nextDay } from "@/lib/dates";
-import { moreKursHistory, removeKurs } from "../actions";
+import { removeKurs } from "../actions";
 import { AddTerminRow } from "./add-termin-row";
 import { KursEditForm } from "./kurs-edit-form";
 import { TerminRowForm } from "./termin-row-form";
@@ -28,10 +28,9 @@ async function KursDetail({
   const { id } = await params;
   const [kurs, history] = await Promise.all([
     getAdminKurs(id),
-    kursHistory(id),
+    getHistory("kurs", id),
   ]);
   const last = kurs.termine.at(-1);
-  const groups = historyGroups(history.events, "kurs");
 
   return (
     <div className="flex flex-col gap-5">
@@ -136,9 +135,9 @@ async function KursDetail({
             Verlauf
           </h2>
           <HistoryList
-            key={groups[0]?.actionId ?? "leer"}
-            initial={{ groups, nextCursor: history.nextCursor }}
-            loadMore={moreKursHistory.bind(null, kurs.id)}
+            key={history.groups[0]?.actionId ?? "leer"}
+            initial={history}
+            loadMore={moreHistory.bind(null, "kurs", kurs.id)}
           />
         </section>
       </div>

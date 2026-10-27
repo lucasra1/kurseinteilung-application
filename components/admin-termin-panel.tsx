@@ -1,9 +1,9 @@
 import { ChevronDown, Lock, Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { moreHistory } from "@/app/(app)/actions";
 import { removeTermin } from "@/app/(app)/kurse/actions";
 import {
   givePlaceAction,
-  moreTerminHistory,
   removeSignupAction,
 } from "@/app/(app)/termine/actions";
 import {
@@ -11,11 +11,12 @@ import {
   AddPersonSearch,
 } from "@/components/add-person-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { HistoryList, type HistoryView } from "@/components/history-list";
+import { HistoryList } from "@/components/history-list";
 import { MoveButtons } from "@/components/move-buttons";
 import { Avatar, kursLabel, StatusChip } from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import { buttonVariants } from "@/components/ui/button";
+import type { HistoryView } from "@/lib/audit-text";
 import type { AdminSignupView, TerminView } from "@/lib/dal/read-model";
 import { formatDate, formatTimeRange } from "@/lib/dates";
 import {
@@ -155,7 +156,7 @@ export function AdminTerminPanel({
             <HistoryList
               key={history.groups[0]?.actionId ?? "leer"}
               initial={history}
-              loadMore={moreTerminHistory.bind(null, termin.id)}
+              loadMore={moreHistory.bind(null, "termin", termin.id)}
             />
           </div>
         </details>

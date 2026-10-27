@@ -2,10 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import type { HistoryView } from "@/components/history-list";
 import { type ActionResult, runAction } from "@/lib/action-result";
-import { historyGroups } from "@/lib/audit-text";
-import { kursHistory } from "@/lib/dal/audit";
 import {
   createKursWithTermine,
   createTermin,
@@ -92,19 +89,4 @@ export async function removeTermin(
     await deleteTermin(idForm.parse(Object.fromEntries(formData)).id);
     return "Termin gelöscht.";
   });
-}
-
-/** Older Verlauf entries of a Kurs for "Mehr anzeigen"; admins only (via kursHistory). */
-export async function moreKursHistory(
-  kursId: string,
-  cursor: string,
-): Promise<HistoryView> {
-  const page = await kursHistory(
-    uuidSchema.parse(kursId),
-    z.iso.datetime().parse(cursor),
-  );
-  return {
-    groups: historyGroups(page.events, "kurs"),
-    nextCursor: page.nextCursor,
-  };
 }

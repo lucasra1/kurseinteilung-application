@@ -1,18 +1,19 @@
 import { Link2 } from "lucide-react";
 import { Suspense } from "react";
+import { moreHistory } from "@/app/(app)/actions";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { HistoryList } from "@/components/history-list";
 import { SkeletonList } from "@/components/skeleton-list";
 import { TerminPanel } from "@/components/termin-panel";
-import { historyGroups } from "@/lib/audit-text";
-import { type HistoryPage, personHistory } from "@/lib/dal/audit";
+import type { HistoryView } from "@/lib/audit-text";
+import { getHistory } from "@/lib/dal/audit";
 import { requireAdmin } from "@/lib/dal/auth";
 import { listPeople, type PersonView } from "@/lib/dal/profiles";
 import { getInviteToken } from "@/lib/dal/settings";
 import { env } from "@/lib/env";
 import { firstParam } from "@/lib/url";
 import { COORDINATOR, countOf } from "@/lib/wording";
-import { morePersonHistory, newInviteLink } from "./actions";
+import { newInviteLink } from "./actions";
 import { CopyButton } from "./copy-button";
 import { PeopleList } from "./people-list";
 
@@ -32,7 +33,7 @@ async function Personen({
     requireAdmin(),
     listPeople(),
     getInviteToken(),
-    personId ? personHistory(personId) : null,
+    personId ? getHistory("person", personId) : null,
   ]);
   const link = `${env.APP_URL}/einladung/${token}`;
   const adminCount = people.filter((p) => p.isAdmin).length;
@@ -122,9 +123,8 @@ function PersonSheet({
   history,
 }: {
   person: PersonView;
-  history: HistoryPage;
+  history: HistoryView;
 }) {
-  const groups = historyGroups(history.events, "person");
   return (
     <TerminPanel
       floating
@@ -133,9 +133,9 @@ function PersonSheet({
       title={person.fullName}
     >
       <HistoryList
-        key={groups[0]?.actionId ?? "leer"}
-        initial={{ groups, nextCursor: history.nextCursor }}
-        loadMore={morePersonHistory.bind(null, person.id)}
+        key={history.groups[0]?.actionId ?? "leer"}
+        initial={history}
+        loadMore={moreHistory.bind(null, "person", person.id)}
       />
     </TerminPanel>
   );

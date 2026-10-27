@@ -19,8 +19,7 @@ import {
 } from "@/components/termin-bits";
 import { buttonVariants } from "@/components/ui/button";
 import { WithPanel } from "@/components/with-panel";
-import { historyGroups } from "@/lib/audit-text";
-import { terminHistory } from "@/lib/dal/audit";
+import { getHistory } from "@/lib/dal/audit";
 import { listPeople } from "@/lib/dal/profiles";
 import {
   type AdminSignupView,
@@ -122,7 +121,7 @@ export async function AdminView({
     ? await Promise.all([
         all.find((t) => t.id === query.termin) ?? findAdminTermin(query.termin),
         listPeople(),
-        terminHistory(query.termin),
+        getHistory("termin", query.termin),
       ])
     : [null, [], null];
 
@@ -145,10 +144,7 @@ export async function AdminView({
             key={selected.id}
             termin={selected}
             people={people}
-            history={{
-              groups: historyGroups(history.events),
-              nextCursor: history.nextCursor,
-            }}
+            history={history}
             closeHref={href({})}
           />
         )

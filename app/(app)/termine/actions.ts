@@ -1,10 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import type { HistoryView } from "@/components/history-list";
 import { type ActionResult, runAction } from "@/lib/action-result";
-import { historyGroups } from "@/lib/audit-text";
-import { terminHistory } from "@/lib/dal/audit";
 import { setFestgeschrieben } from "@/lib/dal/kurse";
 import {
   adminAddSignup,
@@ -126,16 +123,4 @@ export async function changeFestschreibung(
     const result = await setFestgeschrieben(terminIds, value);
     return festschreibungMessage(value, result);
   });
-}
-
-/** Older Verlauf entries of a Termin for "Mehr anzeigen"; admins only (via terminHistory). */
-export async function moreTerminHistory(
-  terminId: string,
-  cursor: string,
-): Promise<HistoryView> {
-  const page = await terminHistory(
-    uuidSchema.parse(terminId),
-    z.iso.datetime().parse(cursor),
-  );
-  return { groups: historyGroups(page.events), nextCursor: page.nextCursor };
 }
