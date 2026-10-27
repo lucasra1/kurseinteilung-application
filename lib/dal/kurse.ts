@@ -1,11 +1,13 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
 import { requireAdmin } from "@/lib/dal/auth";
 import { lockedTermin, mutateStaffing } from "@/lib/dal/staffing-tx";
+import { todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, termine } from "@/lib/db/schema";
 import { DomainError } from "@/lib/errors";
+import { type FestschreibungResult, isFestgeschrieben } from "@/lib/staffing";
 import type { kursSchema, TerminInput } from "@/lib/validation";
 
 export type KursInput = z.infer<typeof kursSchema>;
@@ -89,6 +91,51 @@ export async function updateTermin(
     run: async (tx, locked) => {
       lockedTermin(locked, id);
       await tx.update(termine).set(input).where(eq(termine.id, id));
+    },
+  });
+}
+
+/**
+ * Sets (`value` true) or lifts the manual Festschreibung of the upcoming Termine among
+ * `terminIds`. Goes through mutateStaffing although it changes no roles yet: lifting it
+ * will release held places once Ausschreibung exists. The Verlauf gets one entry per
+ * Termin whose flag changed; no mails.
+ */
+export async function setFestgeschrieben(
+  terminIds: string[],
+  value: boolean,
+): Promise<FestschreibungResult> {
+  const admin = await requireAdmin();
+  const today = todayInVienna();
+  return mutateStaffing({
+    action: {
+      type: value ? "termin.festgeschrieben" : "termin.aufgehoben",
+      actor: admin,
+      target: { terminIds },
+    },
+    terminIds: async () => terminIds,
+    run: async (tx, locked) => {
+      const upcoming = [...locked.values()].filter((t) => t.date >= today);
+      const changed = upcoming.filter((t) => t.festgeschrieben !== value);
+      if (changed.length > 0) {
+        await tx
+          .update(termine)
+          .set({ festgeschrieben: value })
+          .where(
+            inArray(
+              termine.id,
+              changed.map((t) => t.id),
+            ),
+          );
+      }
+      return {
+        changed: changed.length,
+        automatisch: value
+          ? 0
+          : upcoming.filter((t) =>
+              isFestgeschrieben({ ...t, festgeschrieben: false }, today),
+            ).length,
+      };
     },
   });
 }

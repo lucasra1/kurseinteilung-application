@@ -111,6 +111,60 @@ export function staffingLabel(missing: Missing): string {
   return `${parts.join(", ")} ${verb}`;
 }
 
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Today's day 3 calendar months on, as YYYY-MM-DD. It may not exist (30.11. → "02-30"):
+ * compared as a string it still lies after every day of that month and before the next
+ * month, so it acts as the month's last day.
+ */
+function autoFestgeschriebenBis(today: string): string {
+  const [year, month, day] = today.split("-").map(Number);
+  const target = month - 1 + 3;
+  const y = year + Math.floor(target / 12);
+  const m = (target % 12) + 1;
+  return `${y}-${pad(m)}-${pad(day)}`;
+}
+
+/**
+ * Whether a Termin's staffing is binding: set manually, or at most 3 calendar months after
+ * `today` (Vienna, YYYY-MM-DD). Past Termine count as festgeschrieben too.
+ */
+export function isFestgeschrieben(
+  termin: { date: string; festgeschrieben: boolean },
+  today: string,
+): boolean {
+  return termin.festgeschrieben || termin.date <= autoFestgeschriebenBis(today);
+}
+
+/** What setting or lifting the manual Festschreibung of a selection did. */
+export type FestschreibungResult = {
+  /** Selected Termine whose flag changed. */
+  changed: number;
+  /** After lifting: selected Termine still festgeschrieben by date. */
+  automatisch: number;
+};
+
+const termineCount = (n: number) => `${n} ${n === 1 ? "Termin" : "Termine"}`;
+
+/** The feedback after Festschreiben (`value` true) or Aufheben. */
+export function festschreibungMessage(
+  value: boolean,
+  { changed, automatisch }: FestschreibungResult,
+): string {
+  if (value) {
+    return changed === 0
+      ? "Die Auswahl war schon festgeschrieben."
+      : `${termineCount(changed)} festgeschrieben.`;
+  }
+  const lifted =
+    changed === 0
+      ? "In der Auswahl war nichts manuell festgeschrieben."
+      : `Festschreibung bei ${changed} ${changed === 1 ? "Termin" : "Terminen"} aufgehoben.`;
+  if (automatisch === 0) return lifted;
+  return `${lifted} ${termineCount(automatisch)} ${automatisch === 1 ? "bleibt" : "bleiben"} automatisch festgeschrieben (weniger als 3 Monate).`;
+}
+
 /** terminId → profileId → role */
 export type RoleSnapshot = Map<string, Map<string, Role>>;
 

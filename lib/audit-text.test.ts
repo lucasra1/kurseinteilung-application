@@ -264,3 +264,18 @@ describe("formatAuditTime", () => {
     );
   });
 });
+
+describe("auditSentence for Festschreiben", () => {
+  it("says the Termin was festgeschrieben or the Festschreibung lifted", () => {
+    expect(
+      auditSentence(
+        event(LEA, { type: "termin.festgeschrieben", data: { termin } }),
+      ),
+    ).toBe("Lea Berger hat den Termin festgeschrieben");
+    expect(
+      auditSentence(
+        event(LEA, { type: "termin.aufgehoben", data: { termin } }),
+      ),
+    ).toBe("Lea Berger hat die Festschreibung aufgehoben");
+  });
+});

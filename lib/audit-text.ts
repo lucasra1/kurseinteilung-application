@@ -87,6 +87,10 @@ export function auditSentence(event: AuditEvent): string {
     }
     case "termin.deleted":
       return `${actor} hat den Termin ${terminText(event.data.termin)} gelöscht`;
+    case "termin.festgeschrieben":
+      return `${actor} hat den Termin festgeschrieben`;
+    case "termin.aufgehoben":
+      return `${actor} hat die Festschreibung aufgehoben`;
     case "kurs.deleted":
       return `${actor} hat den Kurs „${event.data.kursTitle}“ gelöscht`;
     case "person.removed": {

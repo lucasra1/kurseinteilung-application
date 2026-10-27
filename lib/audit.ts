@@ -64,6 +64,10 @@ export type AuditData = {
   "signup.role_changed": { termin: TerminSnapshot } & RoleShift;
   "termin.updated": { termin: TerminSnapshot; changes: TerminChanges };
   "termin.deleted": { termin: TerminSnapshot };
+  /** One per selected Termin whose manual flag was set. */
+  "termin.festgeschrieben": { termin: TerminSnapshot };
+  /** One per selected Termin whose manual flag was cleared. */
+  "termin.aufgehoben": { termin: TerminSnapshot };
   /** One per Termin of the Kurs; without `termin` if the Kurs had none. */
   "kurs.deleted": { kursTitle: string; termin?: TerminSnapshot };
   /** One per Termin the person was on; without `termin` (and roles null) if none. */
@@ -116,6 +120,10 @@ export type StaffingAction = { actor: Actor } & (
       direction: "up" | "down";
     }
   | { type: "termin.updated" | "termin.deleted"; target: { terminId: string } }
+  | {
+      type: "termin.festgeschrieben" | "termin.aufgehoben";
+      target: { terminIds: string[] };
+    }
   | { type: "kurs.deleted"; target: { kursId: string } }
   | { type: "person.removed"; target: { profileId: string } }
 );
@@ -127,6 +135,8 @@ export type StaffingTermin = TerminSnapshot & {
   location: string | null;
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
+  /** The manual flag; see `isFestgeschrieben` for the rule. */
+  festgeschrieben: boolean;
 };
 
 export type StaffingSignup = {
@@ -281,6 +291,10 @@ function mainEntry(
       return { type: action.type, ...refs, data: { termin, changes } };
     }
     case "termin.deleted":
+      return { type: action.type, ...refs, data: { termin } };
+    // Only Termine whose flag changed get here: the others are unchanged.
+    case "termin.festgeschrieben":
+    case "termin.aufgehoben":
       return { type: action.type, ...refs, data: { termin } };
     case "kurs.deleted":
       return {

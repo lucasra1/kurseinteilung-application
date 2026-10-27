@@ -1,3 +1,4 @@
+import { Lock } from "lucide-react";
 import { formatLongDate, formatWeekday } from "@/lib/dates";
 import {
   isBackup,
@@ -94,6 +95,31 @@ export function StatusChip({
       )}
     >
       {staffingLabel(termin.missing)}
+    </span>
+  );
+}
+
+/**
+ * Lock with "Festgeschrieben" on an upcoming festgeschriebener Termin, nothing otherwise
+ * (every past Termin is festgeschrieben, so the lock would say nothing there).
+ */
+export function FestgeschriebenChip({
+  termin,
+  className,
+}: {
+  termin: { festgeschrieben: boolean; isPast: boolean };
+  className?: string;
+}) {
+  if (!termin.festgeschrieben || termin.isPast) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1 rounded-full border border-zinc-300 px-2 text-xs font-semibold whitespace-nowrap text-zinc-700",
+        className,
+      )}
+    >
+      <Lock aria-hidden="true" className="size-3.5" />
+      Festgeschrieben
     </span>
   );
 }

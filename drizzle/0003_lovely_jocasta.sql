@@ -1,0 +1,1 @@
+ALTER TABLE "app"."termine" ADD COLUMN "festgeschrieben" boolean DEFAULT false NOT NULL;

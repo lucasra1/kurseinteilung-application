@@ -1,4 +1,4 @@
-import { ChevronDown, Pencil, Trash2, X } from "lucide-react";
+import { ChevronDown, Lock, Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { removeTermin } from "@/app/(app)/kurse/actions";
 import {
@@ -100,6 +100,18 @@ export function AdminTerminPanel({
             {formatDate(termin.date)} · {formatTimeRange(termin)}
             {termin.location && ` · ${termin.location}`}
           </p>
+          {termin.festgeschrieben && !termin.isPast && (
+            <p className="flex items-center gap-1.5 text-sm text-zinc-700">
+              <Lock aria-hidden="true" className="size-4 shrink-0" />
+              <span>
+                <span className="font-semibold">Festgeschrieben</span>
+                {" · "}
+                {termin.festgeschriebenManuell
+                  ? "manuell"
+                  : "automatisch (weniger als 3 Monate)"}
+              </span>
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip termin={termin} />
             <Link

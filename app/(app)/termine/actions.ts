@@ -5,6 +5,7 @@ import type { HistoryView } from "@/components/history-list";
 import { type ActionResult, runAction } from "@/lib/action-result";
 import { historyGroups } from "@/lib/audit-text";
 import { terminHistory } from "@/lib/dal/audit";
+import { setFestgeschrieben } from "@/lib/dal/kurse";
 import {
   adminAddSignup,
   adminMoveSignup,
@@ -12,6 +13,7 @@ import {
   signUpSelf,
   withdrawSelf,
 } from "@/lib/dal/signups";
+import { festschreibungMessage } from "@/lib/staffing";
 import { kindSchema, uuidSchema } from "@/lib/validation";
 
 const signupFormSchema = z.object({
@@ -80,6 +82,29 @@ export async function moveSignup(
       .object({ direction: z.enum(["up", "down"]) })
       .parse(values);
     await adminMoveSignup(terminId, profileId, direction);
+  });
+}
+
+const festschreibungForm = z.object({
+  intent: z.enum(["festschreiben", "aufheben"]),
+  terminIds: z
+    .array(uuidSchema)
+    .min(1, { error: "Bitte wähl mindestens einen Termin aus." }),
+});
+
+/** Festschreiben or Aufheben for the Termine selected in the coordinator timeline. */
+export async function changeFestschreibung(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const { intent, terminIds } = festschreibungForm.parse({
+      intent: formData.get("intent"),
+      terminIds: formData.getAll("terminId"),
+    });
+    const value = intent === "festschreiben";
+    const result = await setFestgeschrieben(terminIds, value);
+    return festschreibungMessage(value, result);
   });
 }
 
