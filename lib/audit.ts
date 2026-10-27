@@ -48,6 +48,9 @@ export type TerminChanges = Partial<
   Record<TerminField, [string | number | null, string | number | null]>
 >;
 
+/** Someone a mail went to, by ID and name: the address is looked up when sending. */
+export type Recipient = { profileId: string; personName: string };
+
 /** `data` per event type. */
 export type AuditData = {
   "signup.created": { termin: TerminSnapshot } & RoleShift;
@@ -71,6 +74,8 @@ export type AuditData = {
     kind: Kind;
     places: number;
     angeschrieben: string[];
+    /** For the mails; missing on entries written before #12. */
+    recipients?: Recipient[];
   };
   /**
    * A consequence: `places` of `kind` missing without a backup; `angeschrieben` is how many
@@ -81,6 +86,8 @@ export type AuditData = {
     kind: Kind;
     places: number;
     angeschrieben: number;
+    /** For the mails; missing on entries written before #12. */
+    recipients?: Recipient[];
   };
   "termin.updated": { termin: TerminSnapshot; changes: TerminChanges };
   "termin.deleted": { termin: TerminSnapshot };
@@ -240,7 +247,7 @@ export function staffingEvents(input: {
   /** What `planAusschreibung` decided per Termin. */
   plans?: AusschreibungPlan[];
   /** The Aufrufe of those plans, with the qualified written to (see `planAufrufe`). */
-  aufrufe?: Aufruf<unknown>[];
+  aufrufe?: Aufruf<{ id: string; fullName: string }>[];
   /** The target person's name, needed when they're on none of the Termine. */
   targetName?: string;
   /** The target Kurs' title, needed when it has no Termine. */
@@ -307,24 +314,27 @@ export function staffingEvents(input: {
         data: { termin, ...data },
       }));
     const ausgeschrieben: AuditEntry[] = triggers.flatMap(
-      ({ terminId, kind, trigger }) =>
-        terminId === was.termin.id && trigger.type === "backups"
-          ? [
-              {
-                type: "place.ausgeschrieben",
-                ...refs,
-                profileId: null,
-                data: {
-                  termin,
-                  kind,
-                  places: trigger.places,
-                  angeschrieben: trigger.recipients.map(
-                    (id) => people.get(id) ?? "",
-                  ),
-                },
-              },
-            ]
-          : [],
+      ({ terminId, kind, trigger }) => {
+        if (terminId !== was.termin.id || trigger.type !== "backups") return [];
+        const recipients = trigger.recipients.map((profileId) => ({
+          profileId,
+          personName: people.get(profileId) ?? "",
+        }));
+        return [
+          {
+            type: "place.ausgeschrieben",
+            ...refs,
+            profileId: null,
+            data: {
+              termin,
+              kind,
+              places: trigger.places,
+              angeschrieben: recipients.map((r) => r.personName),
+              recipients,
+            },
+          },
+        ];
+      },
     );
     const aufrufe: AuditEntry[] = (input.aufrufe ?? [])
       .filter((aufruf) => aufruf.terminId === was.termin.id)
@@ -332,7 +342,16 @@ export function staffingEvents(input: {
         type: "place.aufruf",
         ...refs,
         profileId: null,
-        data: { termin, kind, places, angeschrieben: recipients.length },
+        data: {
+          termin,
+          kind,
+          places,
+          angeschrieben: recipients.length,
+          recipients: recipients.map(({ id, fullName }) => ({
+            profileId: id,
+            personName: fullName,
+          })),
+        },
       }));
     return [main, ...consequences, ...ausgeschrieben, ...aufrufe];
   });
