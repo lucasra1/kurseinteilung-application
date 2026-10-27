@@ -5,6 +5,8 @@ const MESSAGES = {
   "bereits-eingetragen": "Diese Person ist für den Termin bereits eingetragen.",
   "nicht-eingetragen": "Diese Person ist für den Termin nicht eingetragen.",
   "termin-vorbei": "Dieser Termin liegt in der Vergangenheit.",
+  "platz-vergeben": "Der Platz ist schon vergeben.",
+  "kein-backup": "Diese Person ist hier kein Backup.",
   "nicht-gefunden": "Eintrag nicht gefunden.",
   "einladung-ungueltig":
     "Dieser Einladungslink ist ungültig. Melde dich bei einer Praxisanleiterkoordinator:in.",
@@ -27,5 +29,16 @@ export class DomainError extends Error {
     super(MESSAGES[code]);
     this.name = "DomainError";
     this.code = code;
+  }
+}
+
+/**
+ * The action would trigger an Ausschreibung or an Aufruf and isn't confirmed yet (spec 3,
+ * Warndialog): nothing was written, `message` is the dialog text.
+ */
+export class ConfirmationRequired extends Error {
+  constructor(text: string) {
+    super(text);
+    this.name = "ConfirmationRequired";
   }
 }

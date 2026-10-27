@@ -13,6 +13,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Kurseinteilung: Instruktoren and Praxisanleiter sign up for Kurs-Termine; see `docs/superpowers/specs/2026-10-26-kurseinteilung-design.md` (spec, roles superseded by `2026-10-27-qualifikationen.md`), `docs/superpowers/specs/2026-10-27-ui-redesign.md` and `docs/superpowers/plans/2026-10-26-kurseinteilung.md` (plan).
 
 - `pnpm dev` / `pnpm build` / `pnpm typecheck` / `pnpm lint` (Biome) / `pnpm format`
+- `pnpm test`: Vitest, pure functions only (`lib/*.test.ts` next to the code; no DB, no `server-only`)
 - `pnpm sb:start` / `pnpm sb:stop`: local Supabase in Docker (Mailpit at http://127.0.0.1:54324)
 - `pnpm db:generate` / `pnpm db:migrate`: Drizzle migrations (schema in `lib/db/schema.ts`, tables in Postgres schema `app`)
 - All data access and authorization live in `lib/dal/` (server-only). No RLS, no Postgres functions.

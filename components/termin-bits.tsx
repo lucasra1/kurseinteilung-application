@@ -1,18 +1,19 @@
+import { Lock } from "lucide-react";
 import { formatLongDate, formatWeekday } from "@/lib/dates";
 import {
   isBackup,
   KIND_LABEL,
   KINDS,
   type Missing,
+  type Needed,
   needed,
   ROLE_LABEL,
   type Role,
-  type Staffing,
   staffingLabel,
 } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
 
-type Counts = Staffing & {
+type Counts = Needed & {
   missing: Missing;
   isStaffed: boolean;
   signups: { role: Role }[];
@@ -98,6 +99,52 @@ export function StatusChip({
   );
 }
 
+/**
+ * Lock with "Festgeschrieben" on an upcoming festgeschriebener Termin, nothing otherwise
+ * (every past Termin is festgeschrieben, so the lock would say nothing there). A chip in
+ * lists, a line with an optional `detail` in panels.
+ */
+export function FestgeschriebenLock({
+  termin,
+  variant = "chip",
+  detail,
+  className,
+}: {
+  termin: { festgeschrieben: boolean; isPast: boolean };
+  variant?: "chip" | "line";
+  detail?: string;
+  className?: string;
+}) {
+  if (!termin.festgeschrieben || termin.isPast) return null;
+  if (variant === "line") {
+    return (
+      <p
+        className={cn(
+          "flex items-center gap-1.5 text-sm text-zinc-700",
+          className,
+        )}
+      >
+        <Lock aria-hidden="true" className="size-4 shrink-0" />
+        <span>
+          <span className="font-semibold">Festgeschrieben</span>
+          {detail && ` · ${detail}`}
+        </span>
+      </p>
+    );
+  }
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1 rounded-full border border-zinc-300 px-2 text-xs font-semibold whitespace-nowrap text-zinc-700",
+        className,
+      )}
+    >
+      <Lock aria-hidden="true" className="size-3.5" />
+      Festgeschrieben
+    </span>
+  );
+}
+
 /** The current person's own role, e.g. "Du: Instruktor". */
 export function RoleChip({
   role,
@@ -120,6 +167,22 @@ export function RoleChip({
     >
       {prefix}
       {ROLE_LABEL[role]}
+    </span>
+  );
+}
+
+export const CLAIM_LABEL = "Platz frei – übernehmen";
+
+/** For a backup of a role with an ausgeschriebenen place: the place is theirs to take. */
+export function ClaimChip({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center rounded-full bg-brand-100 px-2.5 text-xs font-semibold whitespace-nowrap text-brand-700",
+        className,
+      )}
+    >
+      {CLAIM_LABEL}
     </span>
   );
 }

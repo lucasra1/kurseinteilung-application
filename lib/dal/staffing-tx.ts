@@ -1,34 +1,42 @@
 import "server-only";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
-import { isPastDate } from "@/lib/dates";
+import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import {
+  explicitlyPlaced,
+  type StaffingAction,
+  type StaffingTermin,
+  staffingEvents,
+  type TerminState,
+} from "@/lib/audit";
+import { logEvents } from "@/lib/dal/audit";
+import { isPastDate, todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
-import { DomainError } from "@/lib/errors";
+import { ConfirmationRequired, DomainError } from "@/lib/errors";
 import {
+  type PlaceMail,
   type StaffingChange,
   sendStaffingNotifications,
 } from "@/lib/notifications";
 import {
+  type Aufruf,
+  type AusschreibungPlan,
+  ausgeschrieben,
   diffRoles,
   hasQualification,
-  KINDS,
+  isBackup,
+  isFestgeschrieben,
   type Kind,
   needed,
+  planAufrufe,
+  planAusschreibung,
   type RoleSnapshot,
   rankSignups,
+  STAFFING_FIELDS,
+  sortByPosition,
+  type Triggered,
+  triggered,
 } from "@/lib/staffing";
-
-export type LockedTermin = {
-  id: string;
-  kursId: string;
-  kursTitle: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  topic: string;
-  instruktorenNeeded: number;
-  praxisanleiterNeeded: number;
-};
+import { type Warning, warningText } from "@/lib/warning-text";
 
 type SignupRow = {
   terminId: string;
@@ -44,7 +52,7 @@ async function loadTermine(
   tx: Tx,
   ids: string[],
   lock: boolean,
-): Promise<Map<string, LockedTermin>> {
+): Promise<Map<string, StaffingTermin>> {
   if (ids.length === 0) return new Map();
   if (lock) {
     // Lock in a single-table query: Drizzle renders `FOR UPDATE OF` schema-qualified
@@ -65,8 +73,12 @@ async function loadTermine(
       startTime: termine.startTime,
       endTime: termine.endTime,
       topic: termine.topic,
+      location: termine.location,
       instruktorenNeeded: termine.instruktorenNeeded,
       praxisanleiterNeeded: termine.praxisanleiterNeeded,
+      instruktorenAusgeschrieben: termine.instruktorenAusgeschrieben,
+      praxisanleiterAusgeschrieben: termine.praxisanleiterAusgeschrieben,
+      festgeschrieben: termine.festgeschrieben,
     })
     .from(termine)
     .innerJoin(kurse, eq(termine.kursId, kurse.id))
@@ -93,7 +105,7 @@ async function loadSignups(tx: Tx, ids: string[]): Promise<SignupRow[]> {
 }
 
 function rankedByTermin(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   rows: SignupRow[],
 ) {
   return new Map(
@@ -107,6 +119,45 @@ function rankedByTermin(
   );
 }
 
+function states(
+  termineById: Map<string, StaffingTermin>,
+  ranked: ReturnType<typeof rankedByTermin>,
+): TerminState[] {
+  return [...termineById.values()].map((termin) => ({
+    termin,
+    signups: ranked.get(termin.id) ?? [],
+  }));
+}
+
+/** The target names the Verlauf needs when no signup or Termin carries them. */
+async function targetNames(
+  tx: Tx,
+  action: StaffingAction,
+  ids: string[],
+  signupsBefore: SignupRow[],
+): Promise<{ targetName?: string; kursTitle?: string }> {
+  const { target } = action;
+  const names: { targetName?: string; kursTitle?: string } = {};
+  if (
+    "profileId" in target &&
+    !signupsBefore.some((s) => s.profileId === target.profileId)
+  ) {
+    const [person] = await tx
+      .select({ fullName: profiles.fullName })
+      .from(profiles)
+      .where(eq(profiles.id, target.profileId));
+    names.targetName = person?.fullName;
+  }
+  if ("kursId" in target && ids.length === 0) {
+    const [kurs] = await tx
+      .select({ title: kurse.title })
+      .from(kurse)
+      .where(eq(kurse.id, target.kursId));
+    names.kursTitle = kurs?.title;
+  }
+  return names;
+}
+
 function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
   return new Map(
     [...ranked].map(([terminId, list]) => [
@@ -116,30 +167,212 @@ function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
   );
 }
 
+/** `planAusschreibung` for every Termin still there after `run`. */
+function planTermine(
+  action: StaffingAction,
+  before: Map<string, StaffingTermin>,
+  afterRun: Map<string, StaffingTermin>,
+  signupsBefore: SignupRow[],
+  signupsAfter: SignupRow[],
+): AusschreibungPlan[] {
+  const today = todayInVienna();
+  return [...afterRun.values()].map((termin) => {
+    const onTermin = signupsAfter.filter((s) => s.terminId === termin.id);
+    return planAusschreibung({
+      terminId: termin.id,
+      before: {
+        staffing: before.get(termin.id) ?? termin,
+        signups: signupsBefore.filter((s) => s.terminId === termin.id),
+      },
+      after: { staffing: termin, signups: onTermin },
+      festgeschrieben: isFestgeschrieben(termin, today),
+      isPast: termin.date < today,
+      explicit: explicitlyPlaced(
+        action,
+        onTermin.map((s) => s.profileId),
+      ),
+      actorId: action.actor.id,
+    });
+  });
+}
+
+/** Someone an Aufruf writes to. */
+type AufrufRecipient = { id: string; fullName: string; email: string };
+
+/** The plans' Aufrufe with their recipients; writes nothing, so the Warndialog can count them. */
+async function resolveAufrufe(
+  tx: Tx,
+  action: StaffingAction,
+  plans: AusschreibungPlan[],
+  signupsBefore: SignupRow[],
+  signupsAfter: SignupRow[],
+): Promise<Aufruf<AufrufRecipient>[]> {
+  const kinds = new Set(
+    triggered(plans)
+      .filter(({ trigger }) => trigger.type === "aufruf")
+      .map(({ kind }) => kind),
+  );
+  if (kinds.size === 0) return [];
+  const people = await tx
+    .select({
+      id: profiles.id,
+      fullName: profiles.fullName,
+      email: profiles.email,
+      isInstruktor: profiles.isInstruktor,
+      isPraxisanleiter: profiles.isPraxisanleiter,
+    })
+    .from(profiles)
+    .where(
+      or(
+        ...[...kinds].map((kind) =>
+          eq(
+            kind === "instruktor"
+              ? profiles.isInstruktor
+              : profiles.isPraxisanleiter,
+            true,
+          ),
+        ),
+      ),
+    );
+  return planAufrufe({
+    plans,
+    people,
+    before: signupsBefore,
+    after: signupsAfter,
+    actorId: action.actor.id,
+  });
+}
+
+/** Writes the planned counters; returns the Termine with them. */
+async function writeCounters(
+  tx: Tx,
+  afterRun: Map<string, StaffingTermin>,
+  plans: AusschreibungPlan[],
+): Promise<Map<string, StaffingTermin>> {
+  const after = new Map(afterRun);
+  for (const plan of plans) {
+    const termin = afterRun.get(plan.terminId);
+    if (!termin) continue;
+    const counters = {
+      instruktorenAusgeschrieben: plan.roles.instruktor.ausgeschrieben,
+      praxisanleiterAusgeschrieben: plan.roles.praxisanleiter.ausgeschrieben,
+    };
+    if (
+      counters.instruktorenAusgeschrieben ===
+        termin.instruktorenAusgeschrieben &&
+      counters.praxisanleiterAusgeschrieben ===
+        termin.praxisanleiterAusgeschrieben
+    ) {
+      continue;
+    }
+    await tx.update(termine).set(counters).where(eq(termine.id, termin.id));
+    after.set(termin.id, { ...termin, ...counters });
+  }
+  return after;
+}
+
+/** Whether the Warndialog was confirmed; `"nie-noetig"`: the rule never asks, so asking fails. */
+export type Bestaetigt = boolean | "nie-noetig";
+
+/** What the triggered roles would do, for the dialog text. */
+function warnings(
+  triggers: Triggered[],
+  afterRun: Map<string, StaffingTermin>,
+  aufrufe: Aufruf<AufrufRecipient>[],
+): Warning[] {
+  return triggers.flatMap(({ terminId, kind, trigger }): Warning[] => {
+    const termin = afterRun.get(terminId);
+    if (!termin) return [];
+    if (trigger.type === "backups") {
+      const backups = trigger.recipients.length;
+      return [
+        { termin, kind, type: "backups", places: trigger.places, backups },
+      ];
+    }
+    const aufruf = aufrufe.find(
+      (a) => a.terminId === terminId && a.kind === kind,
+    );
+    const qualified = aufruf?.recipients.length ?? 0;
+    return [
+      { termin, kind, type: "aufruf", places: trigger.places, qualified },
+    ];
+  });
+}
+
+/** Throws unless the action may go on; see `Bestaetigt`. */
+function confirm(
+  action: StaffingAction,
+  bestaetigt: Bestaetigt,
+  pending: Warning[],
+): void {
+  if (pending.length === 0 || bestaetigt === true) return;
+  if (bestaetigt === "nie-noetig") {
+    throw new Error(
+      `${action.type} would trigger an Ausschreibung, which the rule never lets it do`,
+    );
+  }
+  throw new ConfirmationRequired(warningText(pending));
+}
+
 /**
- * Runs a change to the signups of some Termine in one transaction: locks the Termin rows
- * first (in id order, so concurrent changes queue up instead of deadlocking), diffs roles
- * before and after, and sends notifications after the commit.
+ * Runs a staffing change in one transaction, Termine locked in id order so concurrent changes
+ * queue instead of deadlocking; writes the Verlauf, sends the mails after the commit.
  */
 export async function mutateStaffing<T>(opts: {
-  actorId: string;
+  action: StaffingAction;
+  /** See `Bestaetigt`. */
+  bestaetigt: Bestaetigt;
   terminIds: (tx: Tx) => Promise<string[]>;
-  run: (tx: Tx, termine: Map<string, LockedTermin>) => Promise<T>;
+  run: (tx: Tx, termine: Map<string, StaffingTermin>) => Promise<T>;
 }): Promise<T> {
-  const out = await db.transaction(async (tx) => {
+  const { action } = opts;
+  const committed = await db.transaction(async (tx) => {
     const ids = [...new Set(await opts.terminIds(tx))].sort();
     const before = await loadTermine(tx, ids, true);
     const signupsBefore = await loadSignups(tx, ids);
+    const names = await targetNames(tx, action, ids, signupsBefore);
 
     const result = await opts.run(tx, before);
 
-    const after = await loadTermine(tx, ids, false);
+    const afterRun = await loadTermine(tx, ids, false);
     const signupsAfter = await loadSignups(tx, ids);
-    const rankedAfter = rankedByTermin(after, signupsAfter);
-    const changes = diffRoles(
-      snapshot(rankedByTermin(before, signupsBefore)),
-      snapshot(rankedAfter),
+    const plans = planTermine(
+      action,
+      before,
+      afterRun,
+      signupsBefore,
+      signupsAfter,
     );
+    const aufrufe = await resolveAufrufe(
+      tx,
+      action,
+      plans,
+      signupsBefore,
+      signupsAfter,
+    );
+    // Nothing of the rule is written yet: throwing here rolls the whole action back.
+    confirm(
+      action,
+      opts.bestaetigt,
+      warnings(triggered(plans), afterRun, aufrufe),
+    );
+    const after = await writeCounters(tx, afterRun, plans);
+
+    const rankedBefore = rankedByTermin(before, signupsBefore);
+    const rankedAfter = rankedByTermin(after, signupsAfter);
+    const changes = diffRoles(snapshot(rankedBefore), snapshot(rankedAfter));
+
+    const afterStates = states(after, rankedAfter);
+    // Kept in memory for the mails: read back, entries of one action have no order.
+    const entries = staffingEvents({
+      action,
+      before: states(before, rankedBefore),
+      after: afterStates,
+      plans,
+      aufrufe,
+      ...names,
+    });
+    await logEvents(tx, action.actor, entries);
 
     const changedIds = [...new Set(changes.map((c) => c.profileId))];
     const stillExisting =
@@ -153,9 +386,12 @@ export async function mutateStaffing<T>(opts: {
     return {
       result,
       changes,
+      entries,
+      plans,
+      aufrufe,
+      afterStates,
       before,
       after,
-      rankedAfter,
       people: new Map(
         [...signupsBefore, ...signupsAfter].map((s) => [
           s.profileId,
@@ -166,51 +402,65 @@ export async function mutateStaffing<T>(opts: {
     };
   });
 
-  const enriched: StaffingChange[] = out.changes.flatMap((change) => {
+  const enriched: StaffingChange[] = committed.changes.flatMap((change) => {
     const termin =
-      out.after.get(change.terminId) ?? out.before.get(change.terminId);
-    const person = out.people.get(change.profileId);
+      committed.after.get(change.terminId) ??
+      committed.before.get(change.terminId);
+    const person = committed.people.get(change.profileId);
     if (!termin || !person) return [];
     if (isPastDate(termin.date)) return [];
-    if (!out.existingProfileIds.has(change.profileId)) return [];
+    if (!committed.existingProfileIds.has(change.profileId)) return [];
     return [{ ...change, termin, person }];
   });
 
-  const terminStateAfter = new Map(
-    [...out.rankedAfter].map(([terminId, list]) => [
-      terminId,
-      {
-        instruktor: list.filter((s) => s.role === "instruktor").length,
-        praxisanleiter: list.filter((s) => s.role === "praxisanleiter").length,
-        backups: list.filter((s) => !KINDS.includes(s.role as Kind)).length,
-      },
-    ]),
+  // The rule never triggers on past Termine, and recipients are on the Termin afterwards.
+  const platzFrei: PlaceMail[] = triggered(committed.plans).flatMap(
+    ({ terminId, kind, trigger }) => {
+      const termin = committed.after.get(terminId);
+      if (trigger.type !== "backups" || !termin) return [];
+      const recipients = trigger.recipients.flatMap((id) => {
+        const person = committed.people.get(id);
+        return person ? [person] : [];
+      });
+      return [{ termin, kind, places: trigger.places, recipients }];
+    },
   );
 
-  await sendStaffingNotifications(enriched, {
-    actorId: opts.actorId,
-    terminStateAfter,
+  const gebraucht: PlaceMail[] = committed.aufrufe.flatMap(
+    ({ terminId, recipients, ...aufruf }) => {
+      const termin = committed.after.get(terminId);
+      return termin ? [{ termin, recipients, ...aufruf }] : [];
+    },
+  );
+
+  await sendStaffingNotifications({
+    actor: action.actor,
+    entries: committed.entries,
+    after: committed.afterStates,
+    changes: enriched,
+    platzFrei,
+    gebraucht,
   });
-  return out.result;
+  return committed.result;
 }
 
 /** The locked Termin for `id`, or `nicht-gefunden`. */
 export function lockedTermin(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   id: string,
-): LockedTermin {
+): StaffingTermin {
   const termin = termineById.get(id);
   if (!termin) throw new DomainError("nicht-gefunden");
   return termin;
 }
 
 /**
- * Appends a person at the end of the list for `kind`: a fixed place if one is free,
- * otherwise a backup. Call only inside `mutateStaffing.run`.
+ * Signs a person up for `kind`: onto an ausgeschriebenen place while there is one, else at
+ * the end. Call only inside `mutateStaffing.run`.
  */
 export async function appendSignup(
   tx: Tx,
-  termin: LockedTermin,
+  termin: StaffingTermin,
   profileId: string,
   kind: Kind,
 ): Promise<void> {
@@ -241,6 +491,75 @@ export async function appendSignup(
   await tx
     .insert(signups)
     .values({ terminId: termin.id, profileId, kind, position: nextPosition });
+  if (ausgeschrieben(termin, kind) > 0) {
+    await takeAusgeschriebenPlace(tx, termin, profileId, kind);
+  }
+}
+
+async function signupsInOrder(tx: Tx, terminId: string) {
+  return sortByPosition(
+    await tx
+      .select({
+        id: signups.id,
+        profileId: signups.profileId,
+        kind: signups.kind,
+        position: signups.position,
+        createdAt: signups.createdAt,
+      })
+      .from(signups)
+      .where(eq(signups.terminId, terminId)),
+  );
+}
+
+/** Puts a signed-up person ahead of the backups of `kind` and lowers its counter by one. */
+async function takeAusgeschriebenPlace(
+  tx: Tx,
+  termin: StaffingTermin,
+  profileId: string,
+  kind: Kind,
+): Promise<void> {
+  const rows = await signupsInOrder(tx, termin.id);
+  const person = rows.find((row) => row.profileId === profileId);
+  if (!person) throw new DomainError("nicht-eingetragen");
+  const others = rows.filter((row) => row !== person);
+  const firstBackup = rankSignups(others, termin).find(
+    (row) => row.role === `backup-${kind}`,
+  );
+  const at = firstBackup
+    ? others.findIndex((row) => row.id === firstBackup.id)
+    : others.length;
+  const order = [...others.slice(0, at), person, ...others.slice(at)];
+  for (const [index, row] of order.entries()) {
+    if (row.position === index + 1) continue;
+    await tx
+      .update(signups)
+      .set({ position: index + 1 })
+      .where(eq(signups.id, row.id));
+  }
+  const counter = STAFFING_FIELDS[kind].ausgeschrieben;
+  await tx
+    .update(termine)
+    .set({ [counter]: sql`${termine[counter]} - 1` })
+    .where(eq(termine.id, termin.id));
+}
+
+/**
+ * Gives a backup an ausgeschriebenen place (übernehmen, Platz geben); the Termin lock lets
+ * exactly one of concurrent claims win. Call only inside `mutateStaffing.run`.
+ */
+export async function claimAusgeschriebenPlace(
+  tx: Tx,
+  termin: StaffingTermin,
+  profileId: string,
+): Promise<void> {
+  const ranked = rankSignups(await signupsInOrder(tx, termin.id), termin);
+  const signup = ranked.find((row) => row.profileId === profileId);
+  if (!signup) throw new DomainError("kein-backup");
+  if (ausgeschrieben(termin, signup.kind) === 0) {
+    throw new DomainError("platz-vergeben");
+  }
+  if (!isBackup(signup.role)) throw new DomainError("kein-backup");
+  await takeAusgeschriebenPlace(tx, termin, profileId, signup.kind);
 }
 
 /** Removes a person and moves everyone behind them up. Call only inside `mutateStaffing.run`. */

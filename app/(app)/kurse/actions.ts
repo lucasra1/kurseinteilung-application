@@ -12,6 +12,7 @@ import {
   updateTermin,
 } from "@/lib/dal/kurse";
 import {
+  bestaetigtSchema,
   kursSchema,
   parseTerminRows,
   terminSchema,
@@ -71,7 +72,10 @@ export async function saveTermin(
 ): Promise<ActionResult> {
   return runAction(async () => {
     const values = Object.fromEntries(formData);
-    await updateTermin(idForm.parse(values).id, terminSchema.parse(values));
+    const { id, bestaetigt } = idForm
+      .extend({ bestaetigt: bestaetigtSchema })
+      .parse(values);
+    await updateTermin(id, terminSchema.parse(values), bestaetigt);
     return "Gespeichert.";
   });
 }

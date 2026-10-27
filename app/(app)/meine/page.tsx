@@ -4,7 +4,13 @@ import { Suspense } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { SignupCta } from "@/components/signup-cta";
 import { SkeletonList } from "@/components/skeleton-list";
-import { Avatar, kursLabel, RoleChip } from "@/components/termin-bits";
+import {
+  Avatar,
+  CLAIM_LABEL,
+  FestgeschriebenLock,
+  kursLabel,
+  RoleChip,
+} from "@/components/termin-bits";
 import { TerminListItem } from "@/components/termin-list-item";
 import { TrainerTerminPanel } from "@/components/trainer-termin-panel";
 import { buttonVariants } from "@/components/ui/button";
@@ -16,8 +22,9 @@ import {
   type TerminView,
 } from "@/lib/dal/read-model";
 import { formatDaysUntil, formatLongDate, formatTimeRange } from "@/lib/dates";
-import { isBackup } from "@/lib/staffing";
+import { canClaimPlace, isBackup } from "@/lib/staffing";
 import { firstParam, hrefWith } from "@/lib/url";
+import { selfWithdrawWarning } from "@/lib/warning-text";
 
 export default function MeinePage({ searchParams }: PageProps<"/meine">) {
   return (
@@ -119,9 +126,10 @@ async function Meine({
             className="mt-0.5 size-4.5 shrink-0 text-zinc-500"
           />
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Du kannst dich jederzeit austragen. Fällt jemand aus, rückt das
-            erste Backup derselben Rolle automatisch nach und bekommt eine
-            E-Mail.
+            Du kannst dich jederzeit austragen. Ist der Termin nicht
+            festgeschrieben, rückt das erste Backup derselben Rolle automatisch
+            nach und bekommt eine E-Mail. Ist er festgeschrieben, wird dein
+            Platz den Backups angeboten: Wer zuerst übernimmt, bekommt ihn.
           </p>
         </div>
       </div>
@@ -143,6 +151,7 @@ function NextTermin({
   const others = termin.signups.filter((s) => s.profileId !== currentUserId);
   const team = others.filter((s) => !isBackup(s.role));
   const backups = others.filter((s) => isBackup(s.role));
+  const claimable = canClaimPlace(termin, me.profileId);
   const names = (list: typeof others) =>
     new Intl.ListFormat("de", { type: "conjunction" }).format(
       list.map((p) => p.fullName),
@@ -151,7 +160,10 @@ function NextTermin({
   return (
     <article className="flex flex-col gap-4 rounded-2xl border bg-card p-5 shadow-xs">
       <div className="flex items-center justify-between gap-3">
-        <RoleChip role={me.role} prefix="" />
+        <span className="flex flex-wrap items-center gap-2">
+          <RoleChip role={me.role} prefix="" />
+          <FestgeschriebenLock termin={termin} />
+        </span>
         <span className="text-[13px] font-medium text-muted-foreground">
           {formatDaysUntil(termin.date)}
         </span>
@@ -193,13 +205,20 @@ function NextTermin({
         </div>
       )}
       <div className="grid gap-2 sm:grid-cols-2">
+        {/* The panel has "Platz übernehmen" as its main action. */}
         <Link
           href={detailsHref}
-          className={buttonVariants({ variant: "outline" })}
+          className={buttonVariants({
+            variant: claimable ? "default" : "outline",
+          })}
         >
-          Details
+          {claimable ? CLAIM_LABEL : "Details"}
         </Link>
-        <SignupCta terminId={termin.id} mode="austragen" />
+        <SignupCta
+          terminId={termin.id}
+          mode="austragen"
+          warning={selfWithdrawWarning(termin, currentUserId)}
+        />
       </div>
     </article>
   );

@@ -1,19 +1,33 @@
-import { Pencil, Trash2, X } from "lucide-react";
+import { ChevronDown, Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { moreHistory } from "@/app/(app)/actions";
 import { removeTermin } from "@/app/(app)/kurse/actions";
-import { removeSignupAction } from "@/app/(app)/termine/actions";
+import {
+  givePlaceAction,
+  removeSignupAction,
+} from "@/app/(app)/termine/actions";
 import {
   type AddPersonOption,
   AddPersonSearch,
 } from "@/components/add-person-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { HistoryList } from "@/components/history-list";
 import { MoveButtons } from "@/components/move-buttons";
-import { Avatar, kursLabel, StatusChip } from "@/components/termin-bits";
+import {
+  Avatar,
+  FestgeschriebenLock,
+  kursLabel,
+  StatusChip,
+} from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import { buttonVariants } from "@/components/ui/button";
+import type { HistoryView } from "@/lib/audit-text";
 import type { AdminSignupView, TerminView } from "@/lib/dal/read-model";
 import { formatDate, formatTimeRange } from "@/lib/dates";
 import {
+  ausgeschrieben,
+  canClaimPlace,
+  fixedPlaces,
   hasQualification,
   isBackup,
   KIND_LABEL,
@@ -30,14 +44,16 @@ type Person = Qualifications & {
   upcomingSignups: number;
 };
 
-/** The Termin panel for admins: contacts, order per role, adding and removing people. */
+/** The Termin panel for admins: contacts, order per role, adding and removing people, Verlauf. */
 export function AdminTerminPanel({
   termin,
   people,
+  history,
   closeHref,
 }: {
   termin: TerminView<AdminSignupView>;
   people: Person[];
+  history: HistoryView;
   closeHref: string;
 }) {
   const signedUp = new Set(termin.signups.map((s) => s.profileId));
@@ -50,12 +66,14 @@ export function AdminTerminPanel({
     .map((kind) => {
       const role = nextRole(termin.signups, termin, kind);
       const ofKind = termin.signups.filter((s) => s.kind === kind).length;
+      // An ausgeschriebener place goes to the newcomer, ahead of the backups.
+      const fixed = termin.signups.filter((s) => s.role === kind).length;
       return {
         kind,
         label: KIND_LABEL[kind].one,
         placement: isBackup(role)
           ? `als Backup ${ofKind + 1 - needed(termin, kind)} (${KIND_LABEL[kind].one})`
-          : `als ${KIND_LABEL[kind].one} auf Platz ${ofKind + 1}`,
+          : `als ${KIND_LABEL[kind].one} auf Platz ${fixed + 1}`,
         people: people
           .filter((p) => !signedUp.has(p.id) && hasQualification(p, kind))
           .map(({ id, fullName, upcomingSignups }) => ({
@@ -94,6 +112,15 @@ export function AdminTerminPanel({
             {formatDate(termin.date)} · {formatTimeRange(termin)}
             {termin.location && ` · ${termin.location}`}
           </p>
+          <FestgeschriebenLock
+            termin={termin}
+            variant="line"
+            detail={
+              termin.festgeschriebenManuell
+                ? "manuell"
+                : "automatisch (weniger als 3 Monate)"
+            }
+          />
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip termin={termin} />
             <Link
@@ -117,6 +144,24 @@ export function AdminTerminPanel({
         {addOptions.length > 0 && (
           <AddPersonSearch terminId={termin.id} options={addOptions} />
         )}
+
+        {/* Server-rendered, so its open state survives the refresh after a change. */}
+        <details className="group border-t pt-4">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-semibold [&::-webkit-details-marker]:hidden">
+            Verlauf
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <div className="pt-2">
+            <HistoryList
+              key={history.groups[0]?.actionId ?? "leer"}
+              initial={history}
+              loadMore={moreHistory.bind(null, "termin", termin.id)}
+            />
+          </div>
+        </details>
       </div>
     </TerminPanel>
   );
@@ -133,7 +178,9 @@ function KindSection({
   const fixed = ofKind.filter((s) => !isBackup(s.role));
   const backups = ofKind.filter((s) => isBackup(s.role));
   const total = needed(termin, kind);
-  const free = termin.missing[kind];
+  // Missing places are the ausgeschriebenen ones first, then plain free ones.
+  const ausgeschriebene = ausgeschrieben(termin, kind);
+  const free = Math.max(0, termin.missing[kind] - ausgeschriebene);
 
   return (
     <section className="flex flex-col gap-1.5">
@@ -153,14 +200,26 @@ function KindSection({
             isLast={signup.rank === ofKind.length}
           />
         ))}
-        {Array.from({ length: free }, (_, i) => (
+        {Array.from({ length: ausgeschriebene }, (_, i) => (
           <li
-            // biome-ignore lint/suspicious/noArrayIndexKey: one row per free place
-            key={i}
-            className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
+            // biome-ignore lint/suspicious/noArrayIndexKey: one row per ausgeschriebenen place
+            key={`ausgeschrieben-${i}`}
+            className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-brand-200 bg-brand-50 px-2.5 text-sm font-medium text-brand-700"
           >
             <span className="w-5 shrink-0 text-[13px] font-semibold">
               {fixed.length + i + 1}
+            </span>
+            Ausgeschrieben
+          </li>
+        ))}
+        {Array.from({ length: free }, (_, i) => (
+          <li
+            // biome-ignore lint/suspicious/noArrayIndexKey: one row per free place
+            key={`free-${i}`}
+            className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
+          >
+            <span className="w-5 shrink-0 text-[13px] font-semibold">
+              {fixed.length + ausgeschriebene + i + 1}
             </span>
             Freier Platz
           </li>
@@ -177,7 +236,7 @@ function KindSection({
                 key={signup.profileId}
                 termin={termin}
                 signup={signup}
-                label={`B${signup.rank - total}`}
+                label={`B${signup.rank - fixedPlaces(termin, kind)}`}
                 isLast={signup.rank === ofKind.length}
               />
             ))}
@@ -220,6 +279,20 @@ function SignupRow({
             </>
           )}
         </span>
+        {canClaimPlace(termin, signup.profileId) && (
+          <div className="mt-1.5">
+            <ConfirmDialog
+              triggerLabel="Platz geben"
+              triggerSize="sm"
+              destructive={false}
+              title={`${signup.fullName} den Platz geben?`}
+              description={`${signup.fullName} wird ${KIND_LABEL[signup.kind].one} und bekommt eine E-Mail.`}
+              confirmLabel="Platz geben"
+              action={givePlaceAction}
+              fields={{ terminId: termin.id, profileId: signup.profileId }}
+            />
+          </div>
+        )}
       </div>
       <MoveButtons
         terminId={termin.id}
@@ -234,7 +307,11 @@ function SignupRow({
         triggerIcon={<X aria-hidden="true" />}
         triggerClassName="text-destructive hover:text-destructive"
         title={`${signup.fullName} austragen?`}
-        description="Die Person wird per E-Mail informiert. Wer dahinter steht, rückt nach."
+        description={
+          termin.festgeschrieben
+            ? "Die Person wird per E-Mail informiert. Der Termin ist festgeschrieben, es rückt niemand automatisch nach."
+            : "Die Person wird per E-Mail informiert. Wer dahinter steht, rückt nach."
+        }
         confirmLabel="Austragen"
         action={removeSignupAction}
         fields={{ terminId: termin.id, profileId: signup.profileId }}

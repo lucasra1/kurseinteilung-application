@@ -28,6 +28,12 @@ const checkbox = z
   .optional()
   .transform((value) => value === "on");
 
+/** The Warndialog was confirmed: "1" when the form is resent, missing otherwise. */
+export const bestaetigtSchema = z
+  .string()
+  .optional()
+  .transform((value) => value === "1");
+
 export const inviteSchema = z
   .object({
     token: z.string().min(1),

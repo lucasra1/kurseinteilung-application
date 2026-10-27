@@ -1,11 +1,19 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
+import {
+  kursCreatedEvents,
+  kursUpdatedEvents,
+  terminCreatedEvent,
+} from "@/lib/audit";
+import { logEvents } from "@/lib/dal/audit";
 import { requireAdmin } from "@/lib/dal/auth";
 import { lockedTermin, mutateStaffing } from "@/lib/dal/staffing-tx";
+import { todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, termine } from "@/lib/db/schema";
 import { DomainError } from "@/lib/errors";
+import { type FestschreibungResult, isFestgeschrieben } from "@/lib/staffing";
 import type { kursSchema, TerminInput } from "@/lib/validation";
 
 export type KursInput = z.infer<typeof kursSchema>;
@@ -23,36 +31,48 @@ export async function createKursWithTermine(
   input: KursInput,
   termineInput: TerminInput[],
 ): Promise<string> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   return db.transaction(async (tx) => {
-    const [row] = await tx
+    const [kurs] = await tx
       .insert(kurse)
       .values(input)
-      .returning({ id: kurse.id });
-    if (termineInput.length > 0) {
-      await tx
-        .insert(termine)
-        .values(termineInput.map((termin) => ({ ...termin, kursId: row.id })));
-    }
-    return row.id;
+      .returning({ id: kurse.id, title: kurse.title });
+    const created =
+      termineInput.length > 0
+        ? await tx
+            .insert(termine)
+            .values(
+              termineInput.map((termin) => ({ ...termin, kursId: kurs.id })),
+            )
+            .returning()
+        : [];
+    await logEvents(tx, admin, kursCreatedEvents(kurs, created));
+    return kurs.id;
   });
 }
 
-/** Title and description don't affect roles: a plain update. */
+/** Title and description don't affect roles: a plain update. Unchanged, it writes nothing. */
 export async function updateKurs(id: string, input: KursInput): Promise<void> {
-  await requireAdmin();
-  const [updated] = await db
-    .update(kurse)
-    .set(input)
-    .where(eq(kurse.id, id))
-    .returning({ id: kurse.id });
-  if (!updated) throw new DomainError("nicht-gefunden");
+  const admin = await requireAdmin();
+  await db.transaction(async (tx) => {
+    const [was] = await tx
+      .select({ title: kurse.title, description: kurse.description })
+      .from(kurse)
+      .where(eq(kurse.id, id))
+      .for("update");
+    if (!was) throw new DomainError("nicht-gefunden");
+    const entries = kursUpdatedEvents(id, was, input);
+    if (entries.length === 0) return;
+    await tx.update(kurse).set(input).where(eq(kurse.id, id));
+    await logEvents(tx, admin, entries);
+  });
 }
 
 export async function deleteKurs(id: string): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: { type: "kurs.deleted", actor: admin, target: { kursId: id } },
+    bestaetigt: "nie-noetig",
     terminIds: (tx) => terminIdsOfKurs(tx, id),
     run: async (tx) => {
       const [deleted] = await tx
@@ -68,23 +88,34 @@ export async function createTermin(
   kursId: string,
   input: TerminInput,
 ): Promise<void> {
-  await requireAdmin();
-  const [kurs] = await db
-    .select({ id: kurse.id })
-    .from(kurse)
-    .where(eq(kurse.id, kursId));
-  if (!kurs) throw new DomainError("nicht-gefunden");
-  await db.insert(termine).values({ ...input, kursId });
+  const admin = await requireAdmin();
+  await db.transaction(async (tx) => {
+    const [kurs] = await tx
+      .select({ title: kurse.title })
+      .from(kurse)
+      .where(eq(kurse.id, kursId));
+    if (!kurs) throw new DomainError("nicht-gefunden");
+    const [created] = await tx
+      .insert(termine)
+      .values({ ...input, kursId })
+      .returning();
+    await logEvents(tx, admin, [terminCreatedEvent(kurs.title, created)]);
+  });
 }
 
-/** The staffing numbers decide who holds a fixed place, so this goes through mutateStaffing. */
+/**
+ * The staffing numbers decide who holds a fixed place, so this goes through mutateStaffing.
+ * `bestaetigt`: the Warndialog was confirmed (see `Bestaetigt`).
+ */
 export async function updateTermin(
   id: string,
   input: TerminInput,
+  bestaetigt: boolean,
 ): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: { type: "termin.updated", actor: admin, target: { terminId: id } },
+    bestaetigt,
     terminIds: async () => [id],
     run: async (tx, locked) => {
       lockedTermin(locked, id);
@@ -93,10 +124,55 @@ export async function updateTermin(
   });
 }
 
+/**
+ * Sets or lifts the manual Festschreibung of the upcoming `terminIds`; through mutateStaffing,
+ * since lifting it lets backups move up.
+ */
+export async function setFestgeschrieben(
+  terminIds: string[],
+  value: boolean,
+): Promise<FestschreibungResult> {
+  const admin = await requireAdmin();
+  const today = todayInVienna();
+  return mutateStaffing({
+    action: {
+      type: value ? "termin.festgeschrieben" : "termin.aufgehoben",
+      actor: admin,
+      target: { terminIds },
+    },
+    bestaetigt: "nie-noetig",
+    terminIds: async () => terminIds,
+    run: async (tx, locked) => {
+      const upcoming = [...locked.values()].filter((t) => t.date >= today);
+      const changed = upcoming.filter((t) => t.festgeschrieben !== value);
+      if (changed.length > 0) {
+        await tx
+          .update(termine)
+          .set({ festgeschrieben: value })
+          .where(
+            inArray(
+              termine.id,
+              changed.map((t) => t.id),
+            ),
+          );
+      }
+      return {
+        changed: changed.length,
+        automatisch: value
+          ? 0
+          : upcoming.filter((t) =>
+              isFestgeschrieben({ ...t, festgeschrieben: false }, today),
+            ).length,
+      };
+    },
+  });
+}
+
 export async function deleteTermin(id: string): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: { type: "termin.deleted", actor: admin, target: { terminId: id } },
+    bestaetigt: "nie-noetig",
     terminIds: async () => [id],
     run: async (tx, locked) => {
       lockedTermin(locked, id);

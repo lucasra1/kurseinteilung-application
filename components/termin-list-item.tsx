@@ -1,7 +1,9 @@
 import { Clock } from "lucide-react";
 import Link from "next/link";
 import {
+  ClaimChip,
   DateBlock,
+  FestgeschriebenLock,
   kursLabel,
   RoleChip,
   SlotDots,
@@ -9,6 +11,7 @@ import {
 } from "@/components/termin-bits";
 import type { TerminView } from "@/lib/dal/read-model";
 import { formatTimeRange } from "@/lib/dates";
+import { canClaimPlace } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
 
 /** One Termin in the timeline; opens the Termin panel. */
@@ -49,7 +52,10 @@ export function TerminListItem({
         </span>
         <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-2">
           <SlotDots termin={termin} />
-          {mine ? (
+          <FestgeschriebenLock termin={termin} />
+          {mine && canClaimPlace(termin, mine.profileId) ? (
+            <ClaimChip className="ml-auto" />
+          ) : mine ? (
             <RoleChip role={mine.role} className="ml-auto" />
           ) : (
             <StatusChip termin={termin} className="ml-auto" />

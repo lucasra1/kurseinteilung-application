@@ -16,6 +16,7 @@ import { todayInVienna } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import {
+  isFestgeschrieben,
   type Kind,
   type Missing,
   missingPlaces,
@@ -53,13 +54,20 @@ export type TerminView<S = SignupView> = {
   location: string | null;
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
+  /** Ausgeschriebene fixed places (`ausgeschrieben(termin, kind)`); they count as missing. */
+  instruktorenAusgeschrieben: number;
+  praxisanleiterAusgeschrieben: number;
   /** In signup order. */
   signups: S[];
-  /** Free fixed places per kind. */
+  /** Free fixed places per kind, ausgeschriebene included. */
   missing: Missing;
   /** Every fixed place is taken. */
   isStaffed: boolean;
   isPast: boolean;
+  /** The staffing is binding: set manually or at most 3 months away (`isFestgeschrieben`). */
+  festgeschrieben: boolean;
+  /** The manual flag; Aufheben clears it. */
+  festgeschriebenManuell: boolean;
 };
 
 export type KursView<S = SignupView> = {
@@ -176,10 +184,14 @@ async function loadKursViews(
           location: termin.location,
           instruktorenNeeded: termin.instruktorenNeeded,
           praxisanleiterNeeded: termin.praxisanleiterNeeded,
+          instruktorenAusgeschrieben: termin.instruktorenAusgeschrieben,
+          praxisanleiterAusgeschrieben: termin.praxisanleiterAusgeschrieben,
           signups: ranked,
           missing,
           isStaffed: missing.instruktor + missing.praxisanleiter === 0,
           isPast: termin.date < today,
+          festgeschrieben: isFestgeschrieben(termin, today),
+          festgeschriebenManuell: termin.festgeschrieben,
         };
       }),
   }));

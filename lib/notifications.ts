@@ -1,63 +1,36 @@
 import "server-only";
 import { eq, inArray, or } from "drizzle-orm";
-import type { LockedTermin } from "@/lib/dal/staffing-tx";
-import { formatDate, formatTerminWhen } from "@/lib/dates";
+import type {
+  Actor,
+  AuditEntry,
+  StaffingTermin,
+  TerminState,
+} from "@/lib/audit";
+import { formatDate, formatTerminWhen, todayInVienna } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { type EmailMessage, sendEmails } from "@/lib/email";
 import { env } from "@/lib/env";
-import { KIND_LABEL, KINDS, ROLE_LABEL, type RoleChange } from "@/lib/staffing";
+import {
+  adminMail,
+  gebrauchtMail,
+  type MailText,
+  type PlaceMailInput,
+  platzFreiMail,
+  SIGNATURE,
+} from "@/lib/mail-text";
+import { type Kind, ROLE_LABEL, type RoleChange } from "@/lib/staffing";
 
 export type StaffingChange = RoleChange & {
-  termin: LockedTermin;
+  termin: StaffingTermin;
   person: { fullName: string; email: string };
 };
 
-type TerminCounts = {
-  instruktor: number;
-  praxisanleiter: number;
-  backups: number;
-};
-
-const SIGNATURE = "\n\nKurseinteilung";
-
-function describe(termin: LockedTermin) {
+function describe(termin: StaffingTermin) {
   return {
     what: `„${termin.kursTitle} – ${termin.topic}“`,
     when: formatTerminWhen(termin),
     day: formatDate(termin.date),
-  };
-}
-
-/** "Instruktoren 2/3, Praxisanleiter 1/1, 2 Backups" */
-function staffingSummary(termin: LockedTermin, counts: TerminCounts): string {
-  const neededOf = {
-    instruktor: termin.instruktorenNeeded,
-    praxisanleiter: termin.praxisanleiterNeeded,
-  };
-  const parts = KINDS.filter((kind) => neededOf[kind] > 0).map(
-    (kind) => `${KIND_LABEL[kind].many} ${counts[kind]}/${neededOf[kind]}`,
-  );
-  if (counts.backups > 0) {
-    parts.push(counts.backups === 1 ? "1 Backup" : `${counts.backups} Backups`);
-  }
-  return parts.join(", ");
-}
-
-function withdrawalEmail(
-  change: StaffingChange,
-  to: string,
-  counts: TerminCounts,
-): EmailMessage {
-  const { termin } = change;
-  const { what, when, day } = describe(termin);
-  return {
-    to,
-    subject: `Abmeldung: ${termin.kursTitle}, ${day}`,
-    text:
-      `${change.person.fullName} hat sich von ${what} am ${when} abgemeldet.\n\n` +
-      `Aktueller Stand: ${staffingSummary(termin, counts)}.\n\n` +
-      `${env.APP_URL}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }
 
@@ -88,7 +61,66 @@ function personEmail(change: StaffingChange): EmailMessage {
   };
 }
 
-async function adminEmails(excludeProfileId: string): Promise<string[]> {
+/**
+ * Places of one role and whom to write about them, without the actor: the backups
+ * ("Platz frei"), or without a backup the qualified not on the Termin ("Du wirst gebraucht").
+ */
+export type PlaceMail = {
+  termin: StaffingTermin;
+  kind: Kind;
+  places: number;
+  recipients: { fullName: string; email: string }[];
+};
+
+/** What one staffing action did, as `mutateStaffing` hands it over after the commit. */
+export type StaffingOutcome = {
+  actor: Actor;
+  /** The action's Verlauf entries, in the order `staffingEvents` built them. */
+  entries: AuditEntry[];
+  /** The Termine afterwards; deleted ones are missing. */
+  after: TerminState[];
+  /** Role changes of people who still have an account, on Termine that aren't past. */
+  changes: StaffingChange[];
+  platzFrei: PlaceMail[];
+  gebraucht: PlaceMail[];
+};
+
+/** One mail per recipient of each `PlaceMail`, worded by `text`. */
+function placeEmails(
+  list: PlaceMail[],
+  text: (input: PlaceMailInput) => MailText,
+): EmailMessage[] {
+  return list.flatMap(({ termin, kind, places, recipients }) =>
+    recipients.map((person) => ({
+      to: person.email,
+      ...text({
+        termin,
+        kind,
+        places,
+        name: person.fullName,
+        appUrl: env.APP_URL,
+      }),
+    })),
+  );
+}
+
+/** Everyone whose role someone else changed. */
+async function betroffeneEmails(outcome: StaffingOutcome) {
+  return outcome.changes
+    .filter((change) => change.profileId !== outcome.actor.id)
+    .map(personEmail);
+}
+
+/** One mail about the whole action to every admin but the actor. */
+async function adminEmails(outcome: StaffingOutcome) {
+  const mail = adminMail({
+    actor: outcome.actor,
+    entries: outcome.entries,
+    after: outcome.after,
+    today: todayInVienna(),
+    appUrl: env.APP_URL,
+  });
+  if (!mail) return [];
   const admins = await db
     .select({ id: profiles.id, email: profiles.email })
     .from(profiles)
@@ -100,43 +132,45 @@ async function adminEmails(excludeProfileId: string): Promise<string[]> {
           )
         : eq(profiles.isAdmin, true),
     );
-  return admins.filter((a) => a.id !== excludeProfileId).map((a) => a.email);
+  return admins
+    .filter((admin) => admin.id !== outcome.actor.id)
+    .map((admin) => ({ to: admin.email, ...mail }));
 }
 
+type MailGroup = {
+  name: string;
+  build: (outcome: StaffingOutcome) => Promise<EmailMessage[]>;
+};
+
 /**
- * Self-withdrawals notify all other admins; changes caused by someone else notify the
- * affected person. Never throws: a failed email is logged and the action still succeeds.
+ * The mails of an action, in sending order: should the daily Resend quota run out, the
+ * more urgent ones are out already (spec 4, Kontingent).
+ */
+const MAIL_GROUPS: MailGroup[] = [
+  {
+    name: "platz-frei",
+    build: async (outcome) => placeEmails(outcome.platzFrei, platzFreiMail),
+  },
+  {
+    name: "gebraucht",
+    build: async (outcome) => placeEmails(outcome.gebraucht, gebrauchtMail),
+  },
+  { name: "betroffene", build: betroffeneEmails },
+  { name: "admins", build: adminEmails },
+];
+
+/**
+ * Sends the mails of one staffing action, group by group. Never throws: a failed group is
+ * logged, the next one is still sent, and the action succeeds.
  */
 export async function sendStaffingNotifications(
-  changes: StaffingChange[],
-  ctx: { actorId: string; terminStateAfter: Map<string, TerminCounts> },
+  outcome: StaffingOutcome,
 ): Promise<void> {
-  try {
-    const messages: EmailMessage[] = [];
-
-    const withdrawals = changes.filter(
-      (c) => c.profileId === ctx.actorId && c.to === null,
-    );
-    if (withdrawals.length > 0) {
-      const recipients = await adminEmails(ctx.actorId);
-      for (const change of withdrawals) {
-        const counts = ctx.terminStateAfter.get(change.terminId) ?? {
-          instruktor: 0,
-          praxisanleiter: 0,
-          backups: 0,
-        };
-        for (const to of recipients) {
-          messages.push(withdrawalEmail(change, to, counts));
-        }
-      }
+  for (const group of MAIL_GROUPS) {
+    try {
+      await sendEmails(await group.build(outcome));
+    } catch (error) {
+      console.error(`[email] ${group.name} fehlgeschlagen`, error);
     }
-
-    for (const change of changes) {
-      if (change.profileId !== ctx.actorId) messages.push(personEmail(change));
-    }
-
-    await sendEmails(messages);
-  } catch (error) {
-    console.error("[email] Benachrichtigungen fehlgeschlagen", error);
   }
 }

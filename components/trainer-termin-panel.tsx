@@ -5,11 +5,18 @@ import {
   type SignupCtaProps,
   type SignupOption,
 } from "@/components/signup-cta";
-import { Avatar, kursLabel } from "@/components/termin-bits";
+import {
+  Avatar,
+  FestgeschriebenLock,
+  kursLabel,
+} from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import type { SignupView, TerminView } from "@/lib/dal/read-model";
 import { formatLongDate, formatTimeRange } from "@/lib/dates";
 import {
+  ausgeschrieben,
+  canClaimPlace,
+  fixedPlaces,
   hasQualification,
   isBackup,
   KIND_LABEL,
@@ -22,6 +29,7 @@ import {
   ROLE_LABEL,
 } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
+import { placesFreedText, selfWithdrawWarning } from "@/lib/warning-text";
 
 type Viewer = Qualifications & { id: string };
 
@@ -46,13 +54,18 @@ export function TrainerTerminPanel({
       footer={<SignupCta {...cta(termin, viewer, mine, options)} />}
     >
       <div className="flex flex-col gap-5">
-        <ul className="flex flex-col gap-2.5 text-[15px]">
-          <MetaLine icon={CalendarDays}>{formatLongDate(termin.date)}</MetaLine>
-          <MetaLine icon={Clock}>{formatTimeRange(termin)} Uhr</MetaLine>
-          {termin.location && (
-            <MetaLine icon={MapPin}>{termin.location}</MetaLine>
-          )}
-        </ul>
+        <div className="flex flex-col gap-2.5">
+          <ul className="flex flex-col gap-2.5 text-[15px]">
+            <MetaLine icon={CalendarDays}>
+              {formatLongDate(termin.date)}
+            </MetaLine>
+            <MetaLine icon={Clock}>{formatTimeRange(termin)} Uhr</MetaLine>
+            {termin.location && (
+              <MetaLine icon={MapPin}>{termin.location}</MetaLine>
+            )}
+          </ul>
+          <FestgeschriebenLock termin={termin} variant="line" />
+        </div>
         {termin.kursDescription && (
           <p className="text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
             {termin.kursDescription}
@@ -107,11 +120,26 @@ function cta(
     };
   }
   if (mine) {
+    if (canClaimPlace(termin, mine.profileId)) {
+      return {
+        terminId,
+        mode: "uebernehmen",
+        hint: placesFreedText(mine.kind, ausgeschrieben(termin, mine.kind)),
+      };
+    }
     const many = KIND_LABEL[mine.kind].many;
-    const hint = isBackup(mine.role)
-      ? `Du bist Backup ${mine.rank - needed(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`
-      : `Du bist als ${KIND_LABEL[mine.kind].one} eingetragen.`;
-    return { terminId, mode: "austragen", hint };
+    if (isBackup(mine.role)) {
+      const backup = `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many}`;
+      // On a festgeschriebenen Termin nobody moves up: a freed place is ausgeschrieben.
+      const hint = termin.festgeschrieben
+        ? `${backup}. Wird ein Platz frei, bekommst du eine E-Mail und kannst ihn übernehmen.`
+        : `${backup} und rückst nach, wenn jemand ausfällt.`;
+      return { terminId, mode: "austragen", hint };
+    }
+    // Only a fixed place on a festgeschriebenen Termin triggers an Ausschreibung.
+    const warning = selfWithdrawWarning(termin, viewer.id);
+    const hint = `Du bist als ${KIND_LABEL[mine.kind].one} eingetragen.${warning ? " Der Termin ist festgeschrieben. Wenn du dich austrägst, wird dein Platz ausgeschrieben." : ""}`;
+    return { terminId, mode: "austragen", hint, warning };
   }
   if (termin.isPast) {
     return { terminId, mode: "disabled", label: "Termin ist vorbei" };
@@ -146,7 +174,9 @@ function optionHint(termin: TerminView, options: SignupOption[]): string {
   const { kind, primary } = options[0];
   const { one, many } = KIND_LABEL[kind];
   if (!primary) {
-    return `Alle ${many}-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt.`;
+    return termin.festgeschrieben
+      ? `Alle ${many}-Plätze sind vergeben. Als Backup bekommst du eine E-Mail, wenn ein Platz frei wird, und kannst ihn übernehmen.`
+      : `Alle ${many}-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt.`;
   }
   const free = termin.missing[kind];
   return free === 1
