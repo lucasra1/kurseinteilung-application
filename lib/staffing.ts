@@ -230,10 +230,7 @@ export type FestschreibungResult = {
 /** What a change does to one role of a Termin besides the roles themselves. */
 export type Trigger =
   | { type: "none" }
-  /**
-   * `places` newly ausgeschrieben; `recipients` are the role's backups (profile ids, in
-   * backup order) without the actor: they get "Platz frei".
-   */
+  /** `places` newly ausgeschrieben; `recipients` (backups in order, no actor) get "Platz frei". */
   | { type: "backups"; places: number; recipients: string[] }
   /** No backup for the role: `places` more fixed places are missing than before. */
   | { type: "aufruf"; places: number };
@@ -269,10 +266,7 @@ export type AusschreibungInput = {
   /** After the change (`isFestgeschrieben`). */
   festgeschrieben: boolean;
   isPast: boolean;
-  /**
-   * People the change put on a fixed place on purpose (Platz übernehmen, Platz geben, ↑/↓):
-   * they never count as moving up.
-   */
+  /** Put on a fixed place on purpose (übernehmen, Platz geben, ↑/↓): never moving up. */
   explicit: ReadonlySet<string>;
   /** Never a recipient. */
   actorId: string;
@@ -289,21 +283,19 @@ function planRole(
 ): RolePlan {
   const { before, after } = input;
   const backup: Role = `backup-${kind}`;
-  // 1. A lower number takes ausgeschriebene places away first, fixed ones only after.
+  // A lower number takes ausgeschriebene places away first, fixed ones only after.
   const cut = Math.max(
     0,
     needed(before.staffing, kind) - needed(after.staffing, kind),
   );
   let count = Math.max(0, ausgeschrieben(after.staffing, kind) - cut);
   const none: Trigger = { type: "none" };
-  // 2. Past: the counter stays, so the staffing reads right in hindsight.
+  // Past: the counter stays, so the staffing reads right in hindsight.
   if (input.isPast) return { ausgeschrieben: count, trigger: none };
-  // 3. Not binding: backups move up as they always did.
   if (!input.festgeschrieben) return { ausgeschrieben: 0, trigger: none };
   const counted = count;
 
-  // 4. Backups who would move up stay backups: their places are ausgeschrieben. Repeated,
-  // since a number raised by more than the backups would still lift one.
+  // Former backups stay backups; repeated, as a big raise would still lift one.
   const wasBackup = new Set(
     rankedBefore.filter((s) => s.role === backup).map((s) => s.profileId),
   );
@@ -322,7 +314,7 @@ function planRole(
     rankedAfter = rankWith(count);
   }
 
-  // 5. More fixed places missing than before: offer them to the backups, else an Aufruf.
+  // More fixed places missing than before: an Ausschreibung, or without backups an Aufruf.
   const more =
     missingPlaces(rankedAfter, after.staffing)[kind] -
     missingPlaces(rankedBefore, before.staffing)[kind];
@@ -343,10 +335,7 @@ function planRole(
   };
 }
 
-/**
- * The Ausschreibung rule (spec 3): per role the counter of ausgeschriebene places after a
- * change and what it triggers. Pure, so a confirmation can ask before anything is written.
- */
+/** The Ausschreibung rule (spec 3) per role: the new counter and what the change triggers. */
 export function planAusschreibung(
   input: AusschreibungInput,
 ): AusschreibungPlan {
@@ -389,10 +378,8 @@ export type Aufruf<P> = {
 };
 
 /**
- * Who gets "Du wirst gebraucht" for each Aufruf the plans trigger: everyone of `people`
- * with the role's qualification who is on the Termin in no role, without the actor.
- * Whoever the change just took off the Termin isn't called back either: they get
- * "Ausgetragen".
+ * Who gets "Du wirst gebraucht" per Aufruf: the qualified not on the Termin, without the
+ * actor and whoever the change just took off (they get "Ausgetragen").
  */
 export function planAufrufe<P extends { id: string } & Qualifications>(input: {
   plans: AusschreibungPlan[];

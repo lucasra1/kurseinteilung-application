@@ -125,10 +125,8 @@ export async function updateTermin(
 }
 
 /**
- * Sets (`value` true) or lifts the manual Festschreibung of the upcoming Termine among
- * `terminIds`. Goes through mutateStaffing: lifting it releases ausgeschriebene places, so
- * backups move up (and get "Neue Rolle"). The Verlauf gets one entry per Termin whose flag
- * changed; mails only if someone moved up.
+ * Sets or lifts the manual Festschreibung of the upcoming `terminIds`; through mutateStaffing,
+ * since lifting it lets backups move up.
  */
 export async function setFestgeschrieben(
   terminIds: string[],

@@ -129,10 +129,7 @@ function states(
   }));
 }
 
-/**
- * Names the Verlauf needs that may be gone after `run`: the target person if they're on
- * none of the Termine, the target Kurs if it has none.
- */
+/** The target names the Verlauf needs when no signup or Termin carries them. */
 async function targetNames(
   tx: Tx,
   action: StaffingAction,
@@ -202,12 +199,7 @@ function planTermine(
 /** Someone an Aufruf writes to. */
 type AufrufRecipient = { id: string; fullName: string; email: string };
 
-/**
- * The Aufrufe the plans trigger, each with the qualified who get "Du wirst gebraucht"
- * (see `planAufrufe`); `recipients.length` is how many. Reads the profiles only if there is an
- * Aufruf. Writes nothing, so a confirmation can count the recipients before anything is
- * written.
- */
+/** The plans' Aufrufe with their recipients; writes nothing, so the Warndialog can count them. */
 async function resolveAufrufe(
   tx: Tx,
   action: StaffingAction,
@@ -279,14 +271,7 @@ async function writeCounters(
   return after;
 }
 
-/**
- * The Warndialog (spec 3) for an action that would trigger an Ausschreibung or an Aufruf:
- * - `false`: stop with `ConfirmationRequired` (the dialog text), nothing is written;
- * - `true`: the person confirmed; it runs on the state as it is now, whatever the dialog said;
- * - `"nie-noetig"`: the action never triggers by the rule (eintragen, übernehmen, Platz
- *   geben, ↑/↓, löschen, festschreiben). If it does anyway, that's a bug: it fails instead
- *   of sending mails nobody was warned about.
- */
+/** Whether the Warndialog was confirmed; `"nie-noetig"`: the rule never asks, so asking fails. */
 export type Bestaetigt = boolean | "nie-noetig";
 
 /** What the triggered roles would do, for the dialog text. */
@@ -330,11 +315,8 @@ function confirm(
 }
 
 /**
- * Runs a change to the signups of some Termine in one transaction: locks the Termin rows
- * first (in id order, so concurrent changes queue up instead of deadlocking), applies the
- * Ausschreibung rule (`planAusschreibung`), diffs roles before and after, writes the
- * Verlauf for `action` (see lib/audit.ts) and sends the mails built from it after the
- * commit.
+ * Runs a staffing change in one transaction, Termine locked in id order so concurrent changes
+ * queue instead of deadlocking; writes the Verlauf, sends the mails after the commit.
  */
 export async function mutateStaffing<T>(opts: {
   action: StaffingAction;
@@ -368,8 +350,7 @@ export async function mutateStaffing<T>(opts: {
       signupsBefore,
       signupsAfter,
     );
-    // Nothing of the rule is written yet: throwing here rolls the whole action back, without
-    // counters, Verlauf or mails.
+    // Nothing of the rule is written yet: throwing here rolls the whole action back.
     confirm(
       action,
       opts.bestaetigt,
@@ -474,9 +455,8 @@ export function lockedTermin(
 }
 
 /**
- * Signs a person up for `kind`: while a place of the kind is ausgeschrieben they take it
- * (first come, first served), otherwise they go to the end of the list, on a free fixed
- * place or as a backup. Call only inside `mutateStaffing.run`.
+ * Signs a person up for `kind`: onto an ausgeschriebenen place while there is one, else at
+ * the end. Call only inside `mutateStaffing.run`.
  */
 export async function appendSignup(
   tx: Tx,
@@ -531,11 +511,7 @@ async function signupsInOrder(tx: Tx, terminId: string) {
   );
 }
 
-/**
- * Moves a signed-up person to the first backup slot of `kind` (before every other backup),
- * renumbers the Termin's positions and lowers the counter by one: they now hold the place.
- * `termin` is the locked state, with a place of `kind` ausgeschrieben.
- */
+/** Puts a signed-up person ahead of the backups of `kind` and lowers its counter by one. */
 async function takeAusgeschriebenPlace(
   tx: Tx,
   termin: StaffingTermin,
@@ -568,10 +544,8 @@ async function takeAusgeschriebenPlace(
 }
 
 /**
- * Gives a backup an ausgeschriebenen place of their role (Platz übernehmen, Platz geben):
- * `platz-vergeben` once none is left, `kein-backup` if the person isn't a backup here. The
- * Termin lock of `mutateStaffing` queues concurrent claims, so exactly one wins. Call only
- * inside `mutateStaffing.run`, with the action's target as the person.
+ * Gives a backup an ausgeschriebenen place (übernehmen, Platz geben); the Termin lock lets
+ * exactly one of concurrent claims win. Call only inside `mutateStaffing.run`.
  */
 export async function claimAusgeschriebenPlace(
   tx: Tx,

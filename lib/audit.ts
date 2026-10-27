@@ -1,16 +1,5 @@
-/**
- * The Verlauf (audit log): event types and the shape of their `data`, in one place.
- *
- * Every entry of one action shares an `actionId`. A staffing change (through
- * `mutateStaffing`) writes one main entry per Termin it changed, carrying the role change
- * of the person it targets, plus one `signup.role_changed` per other person whose role
- * changed as a consequence (moved up, became backup, lost the place with a deleted
- * Termin). An action that locked no Termin at all (a Kurs without Termine, a person
- * without signups) writes one main entry without a Termin.
- *
- * `data` is a snapshot of what a reader needs later, since the Termin, Kurs or person may
- * be gone by then. It never contains e-mail addresses or phone numbers.
- */
+// Verlauf event types and their `data`: a snapshot for later readers, since the Termin, Kurs
+// or person may be gone by then. Never e-mail addresses or phone numbers.
 import {
   type Aufruf,
   type AusschreibungPlan,
@@ -178,10 +167,7 @@ export type AuditEvent = {
   };
 }[AuditType];
 
-/**
- * What a staffing change is: every `mutateStaffing` caller passes one. `target` is whom or
- * what the action is aimed at; a target person's own role change goes into the main entry.
- */
+/** A staffing change and its target; the target person's role change is in its main entry. */
 export type StaffingAction = { actor: Actor } & (
   | {
       type:
@@ -205,10 +191,7 @@ export type StaffingAction = { actor: Actor } & (
   | { type: "person.removed"; target: { profileId: string } }
 );
 
-/**
- * Who the action put on a fixed place on purpose, among `onTermin` (profile ids on one
- * Termin afterwards): `planAusschreibung` never counts them as moving up.
- */
+/** Who of `onTermin` the action put on a fixed place on purpose: never counted as moving up. */
 export function explicitlyPlaced(
   action: StaffingAction,
   onTermin: string[],
@@ -249,12 +232,7 @@ export type StaffingSignup = {
 /** A Termin and its ranked signups at one point in time. */
 export type TerminState = { termin: StaffingTermin; signups: StaffingSignup[] };
 
-/**
- * The entries a staffing action writes (see the top of this file). `before` holds the
- * locked Termine, `after` the same ones afterwards (deleted ones missing). Per Termin: the
- * main entry, the role changes of others, then the places the action ausgeschrieben, then
- * its Aufrufe.
- */
+/** Per changed Termin: the main entry, others' role changes, Ausschreibungen, Aufrufe. */
 export function staffingEvents(input: {
   action: StaffingAction;
   before: TerminState[];
@@ -273,6 +251,7 @@ export function staffingEvents(input: {
   const targetId =
     "profileId" in action.target ? action.target.profileId : undefined;
 
+  // Nothing locked (a Kurs without Termine, a person without signups): one entry, no Termin.
   if (input.before.length === 0) {
     if (action.type === "person.removed") {
       return [

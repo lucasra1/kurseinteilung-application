@@ -76,11 +76,7 @@ function shiftsRole(entry: AuditEntry): boolean {
   return "from" in entry.data && entry.data.from !== entry.data.to;
 }
 
-/**
- * Whether the block changed the staffing: someone's role, the order (↑/↓) or the numbers.
- * Other edits (time, place, Festschreiben) and deleting a Termin nobody was on only go
- * into the Verlauf.
- */
+/** Whether the block changed a role, the order (↑/↓) or the numbers; else Verlauf only. */
 function changesStaffing({ main, consequences }: Block): boolean {
   if ([main, ...consequences].some(shiftsRole)) return true;
   if (main.type === "signup.moved") return true;
