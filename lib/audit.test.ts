@@ -726,6 +726,65 @@ describe("staffingEvents for Ausschreibung", () => {
     ]);
   });
 
+  it("writes the withdrawal, then the Aufruf with how many qualified were written to", () => {
+    const events = staffingEvents({
+      action: {
+        type: "signup.removed",
+        actor: ANNA,
+        target: { terminId: "t1", profileId: ANNA.id },
+      },
+      before: [state(T1, [signup(ANNA, "instruktor", 1, "instruktor")])],
+      after: [state(T1, [])],
+      plans: [
+        {
+          terminId: "t1",
+          roles: {
+            instruktor: {
+              ausgeschrieben: 0,
+              trigger: { type: "aufruf", places: 1 },
+            },
+            praxisanleiter: NONE,
+          },
+        },
+      ],
+      aufrufe: [
+        {
+          terminId: "t1",
+          kind: "instruktor",
+          places: 1,
+          recipients: [BEN, CLARA],
+        },
+      ],
+    });
+
+    expect(events).toEqual([
+      {
+        type: "signup.removed",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: ANNA.id,
+        data: {
+          termin: T1_SNAPSHOT,
+          personName: "Anna Huber",
+          from: "instruktor",
+          to: null,
+        },
+      },
+      {
+        type: "place.aufruf",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: null,
+        data: {
+          termin: T1_SNAPSHOT,
+          kind: "instruktor",
+          places: 1,
+          angeschrieben: 2,
+        },
+      },
+    ]);
+  });
+
   it("writes Platz übernehmen as the claimer's role change, Backup → Instruktor", () => {
     const events = staffingEvents({
       action: {

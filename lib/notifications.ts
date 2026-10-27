@@ -7,7 +7,7 @@ import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { type EmailMessage, sendEmails } from "@/lib/email";
 import { env } from "@/lib/env";
-import { coordinatorMail, platzFreiMail } from "@/lib/mail-text";
+import { coordinatorMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
 import { type Kind, ROLE_LABEL, type RoleChange } from "@/lib/staffing";
 
 export type StaffingChange = RoleChange & {
@@ -76,6 +76,15 @@ export type PlatzFrei = {
   recipients: { fullName: string; email: string }[];
 };
 
+/** A role lacking places without a backup, and the qualified to call ("Du wirst gebraucht"). */
+export type Gebraucht = {
+  termin: LockedTermin;
+  kind: Kind;
+  places: number;
+  /** Qualified, on the Termin in no role, without the actor. */
+  recipients: { fullName: string; email: string }[];
+};
+
 /** What one staffing action did, as `mutateStaffing` hands it over after the commit. */
 export type StaffingOutcome = {
   actor: Actor;
@@ -86,6 +95,7 @@ export type StaffingOutcome = {
   /** Role changes of people who still have an account, on Termine that aren't past. */
   changes: StaffingChange[];
   platzFrei: PlatzFrei[];
+  gebraucht: Gebraucht[];
 };
 
 /** "Platz frei" to the backups of every role whose places the action ausgeschrieben. */
@@ -94,6 +104,22 @@ async function platzFreiEmails(outcome: StaffingOutcome) {
     recipients.map((person) => ({
       to: person.email,
       ...platzFreiMail({
+        termin,
+        kind,
+        places,
+        name: person.fullName,
+        appUrl: env.APP_URL,
+      }),
+    })),
+  );
+}
+
+/** "Du wirst gebraucht" to the qualified for every role lacking places without a backup. */
+async function gebrauchtEmails(outcome: StaffingOutcome) {
+  return outcome.gebraucht.flatMap(({ termin, kind, places, recipients }) =>
+    recipients.map((person) => ({
+      to: person.email,
+      ...gebrauchtMail({
         termin,
         kind,
         places,
@@ -136,6 +162,7 @@ type MailGroup = {
  */
 const MAIL_GROUPS: MailGroup[] = [
   { name: "platz-frei", build: platzFreiEmails },
+  { name: "gebraucht", build: gebrauchtEmails },
   { name: "betroffene", build: betroffeneEmails },
   { name: "koordination", build: koordinationEmails },
 ];

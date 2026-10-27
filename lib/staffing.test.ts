@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aufrufe,
   festschreibungMessage,
   isFestgeschrieben,
   type Kind,
@@ -274,6 +275,16 @@ describe("planAusschreibung", () => {
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "aufruf", places: 1 } });
   });
 
+  it("keeps the counter when it calls the qualified (N 3, A 1, a fixed one leaves)", () => {
+    expect(
+      instruktorPlan(
+        { staffing: staffing(3, 1), signups: inOrder("anna", "ben") },
+        { staffing: staffing(3, 1), signups: inOrder("ben") },
+        { actorId: "anna" },
+      ),
+    ).toEqual({ ausgeschrieben: 1, trigger: { type: "aufruf", places: 1 } });
+  });
+
   it("only touches the role whose places changed", () => {
     const plan = planAusschreibung({
       terminId: "t1",
@@ -404,5 +415,121 @@ describe("planAusschreibung never triggers on", () => {
         { staffing: staffing(1), signups },
       ),
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "none" } });
+  });
+});
+
+describe("aufrufe", () => {
+  /** Everyone with an account: id and qualifications. */
+  const PEOPLE = [
+    { id: "lea", isInstruktor: false, isPraxisanleiter: false },
+    { id: "anna", isInstruktor: true, isPraxisanleiter: false },
+    { id: "ben", isInstruktor: true, isPraxisanleiter: false },
+    { id: "clara", isInstruktor: true, isPraxisanleiter: false },
+    { id: "dora", isInstruktor: true, isPraxisanleiter: true },
+    { id: "emil", isInstruktor: false, isPraxisanleiter: true },
+    { id: "paul", isInstruktor: true, isPraxisanleiter: true },
+  ];
+
+  /** Who gets "Du wirst gebraucht" for a change on festgeschrieben, upcoming Termin t1. */
+  function called(before: Side, after: Side, actorId: string) {
+    const plan = planAusschreibung({
+      terminId: "t1",
+      before,
+      after,
+      festgeschrieben: true,
+      isPast: false,
+      explicit: new Set(),
+      actorId,
+    });
+    const onT1 = (side: Side) =>
+      side.signups.map((s) => ({ terminId: "t1", profileId: s.profileId }));
+    return aufrufe({
+      plans: [plan],
+      people: PEOPLE,
+      before: onT1(before),
+      after: onT1(after),
+      actorId,
+    }).map(({ recipients, ...aufruf }) => ({
+      ...aufruf,
+      recipients: recipients.map((p) => p.id),
+    }));
+  }
+
+  it("calls everyone qualified for the role who is on the Termin in no role, without the actor", () => {
+    expect(
+      called(
+        {
+          staffing: staffing(2, 0, 1),
+          signups: inOrder("anna", "ben", ["paul", "praxisanleiter"]),
+        },
+        {
+          staffing: staffing(2, 0, 1),
+          signups: inOrder("ben", ["paul", "praxisanleiter"]),
+        },
+        "anna",
+      ),
+    ).toEqual([
+      {
+        terminId: "t1",
+        kind: "instruktor",
+        places: 1,
+        recipients: ["clara", "dora"],
+      },
+    ]);
+  });
+
+  it("calls nobody when the role has a backup: the backups get Platz frei", () => {
+    expect(
+      called(
+        { staffing: staffing(2), signups: inOrder("anna", "ben", "clara") },
+        { staffing: staffing(2), signups: inOrder("ben", "clara") },
+        "anna",
+      ),
+    ).toEqual([]);
+  });
+
+  it("calls the qualified when a higher number finds no backup", () => {
+    const signups = inOrder("anna", "ben");
+    expect(
+      called(
+        { staffing: staffing(2), signups },
+        { staffing: staffing(3), signups },
+        "lea",
+      ),
+    ).toEqual([
+      {
+        terminId: "t1",
+        kind: "instruktor",
+        places: 1,
+        recipients: ["clara", "dora", "paul"],
+      },
+    ]);
+  });
+
+  it("calls nobody when the last backup withdraws while a place is ausgeschrieben", () => {
+    expect(
+      called(
+        { staffing: staffing(2, 1), signups: inOrder("anna", "ben") },
+        { staffing: staffing(2, 1), signups: inOrder("anna") },
+        "ben",
+      ),
+    ).toEqual([]);
+  });
+
+  it("doesn't call back whoever a coordinator just took off the Termin", () => {
+    expect(
+      called(
+        { staffing: staffing(2), signups: inOrder("anna", "ben") },
+        { staffing: staffing(2), signups: inOrder("ben") },
+        "lea",
+      ),
+    ).toEqual([
+      {
+        terminId: "t1",
+        kind: "instruktor",
+        places: 1,
+        recipients: ["clara", "dora", "paul"],
+      },
+    ]);
   });
 });

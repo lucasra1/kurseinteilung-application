@@ -5,8 +5,8 @@ import {
   staffingEvents,
   type TerminState,
 } from "@/lib/audit";
-import { coordinatorMail, platzFreiMail } from "@/lib/mail-text";
-import type { AusschreibungPlan, Kind, Role } from "@/lib/staffing";
+import { coordinatorMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
+import type { Aufruf, AusschreibungPlan, Kind, Role } from "@/lib/staffing";
 
 const LEA = { id: "lea", fullName: "Lea Berger" };
 const ANNA = { id: "anna", fullName: "Anna Huber" };
@@ -60,8 +60,9 @@ function mail(
   after: TerminState[],
   today = TODAY,
   plans: AusschreibungPlan[] = [],
+  aufrufe: Aufruf<unknown>[] = [],
 ) {
-  const entries = staffingEvents({ action, before, after, plans });
+  const entries = staffingEvents({ action, before, after, plans, aufrufe });
   return coordinatorMail({
     actor: action.actor,
     entries,
@@ -480,6 +481,60 @@ describe("coordinatorMail for Ausschreibung", () => {
   });
 });
 
+describe("coordinatorMail for Aufruf", () => {
+  const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
+  const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
+  const plans: AusschreibungPlan[] = [
+    {
+      terminId: "t1",
+      roles: {
+        instruktor: {
+          ausgeschrieben: 0,
+          trigger: { type: "aufruf", places: 1 },
+        },
+        praxisanleiter: NONE,
+      },
+    },
+  ];
+  const calling = (n: number): Aufruf<unknown>[] => [
+    {
+      terminId: "t1",
+      kind: "instruktor",
+      places: 1,
+      recipients: Array.from({ length: n }, (_, i) => `q${i}`),
+    },
+  ];
+  const withdrawal = {
+    type: "signup.removed",
+    actor: ANNA,
+    target: { terminId: "t1", profileId: ANNA.id },
+  } as const;
+  const before = [state(T1F, [signup(ANNA, "instruktor", 1, "instruktor")])];
+  const after = [state(T1F, [])];
+
+  it("says there is no backup and how many qualified were written to", () => {
+    expect(mail(withdrawal, before, after, TODAY, plans, calling(14))).toEqual({
+      subject: "Abmeldung: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      text:
+        "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
+        "Anna Huber hat sich ausgetragen (Instruktor).\n" +
+        "– Kein Backup: 14 Qualifizierte angeschrieben.\n" +
+        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1.\n" +
+        "https://kurse.example.org/termine?termin=t1\n\n" +
+        "Kurseinteilung",
+    });
+  });
+
+  it("speaks of one person, or says nobody else is qualified", () => {
+    expect(
+      mail(withdrawal, before, after, TODAY, plans, calling(1))?.text,
+    ).toContain("\n– Kein Backup: 1 qualifizierte Person angeschrieben.\n");
+    expect(
+      mail(withdrawal, before, after, TODAY, plans, calling(0))?.text,
+    ).toContain("\n– Kein Backup und sonst niemand qualifiziert.\n");
+  });
+});
+
 describe("platzFreiMail", () => {
   it("offers the place to a backup, with the link to the Termin", () => {
     expect(
@@ -512,5 +567,38 @@ describe("platzFreiMail", () => {
     ).toContain(
       "sind 2 Praxisanleiter-Plätze frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt einen davon.",
     );
+  });
+});
+
+describe("gebrauchtMail", () => {
+  it("asks someone qualified to sign up, with the link to the Termin", () => {
+    expect(
+      gebrauchtMail({
+        termin: T1,
+        kind: "instruktor",
+        places: 1,
+        name: "Clara Ott",
+        appUrl: APP_URL,
+      }),
+    ).toEqual({
+      subject: "Du wirst gebraucht: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      text:
+        "Hallo Clara Ott,\n\n" +
+        "bei „Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00 fehlt ein Instruktor. Wenn du Zeit hast, trag dich ein.\n\n" +
+        "https://kurse.example.org/termine?termin=t1\n\n" +
+        "Kurseinteilung",
+    });
+  });
+
+  it("names the number when more than one is missing", () => {
+    expect(
+      gebrauchtMail({
+        termin: T1,
+        kind: "praxisanleiter",
+        places: 2,
+        name: "Clara Ott",
+        appUrl: APP_URL,
+      }).text,
+    ).toContain("fehlen 2 Praxisanleiter. Wenn du Zeit hast, trag dich ein.");
   });
 });

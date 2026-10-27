@@ -7,7 +7,7 @@ import type {
   TerminSnapshot,
   TerminState,
 } from "@/lib/audit";
-import { auditSentence } from "@/lib/audit-text";
+import { auditSentence, qualifiedCount } from "@/lib/audit-text";
 import { formatDate, formatTerminWhen } from "@/lib/dates";
 import {
   isBackup,
@@ -116,6 +116,12 @@ function consequenceLine(entry: AuditEntry, actor: Actor): string {
       const who = angeschrieben.length === 1 ? "Backup" : "Backups";
       return `${held} Angeschrieben: ${angeschrieben.join(", ")} (${who}).`;
     }
+    case "place.aufruf": {
+      const { angeschrieben } = entry.data;
+      return angeschrieben === 0
+        ? "– Kein Backup und sonst niemand qualifiziert."
+        : `– Kein Backup: ${qualifiedCount(angeschrieben)} angeschrieben.`;
+    }
     default:
       return `– ${auditSentence(asEvent(entry, actor))}.`;
   }
@@ -205,6 +211,28 @@ export function platzFreiMail(input: {
     text:
       `Hallo ${input.name},\n\n` +
       `bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)} ${freed}\n\n` +
+      `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
+  };
+}
+
+/** "Du wirst gebraucht" to someone qualified who isn't on a Termin lacking places without a backup. */
+export function gebrauchtMail(input: {
+  termin: TerminSnapshot & { id: string };
+  kind: Kind;
+  places: number;
+  name: string;
+  appUrl: string;
+}): MailText {
+  const { termin, kind, places } = input;
+  const missing =
+    places === 1
+      ? `fehlt ein ${KIND_LABEL[kind].one}`
+      : `fehlen ${places} ${KIND_LABEL[kind].many}`;
+  return {
+    subject: `Du wirst gebraucht: ${termin.kursTitle}, ${formatDate(termin.date)}`,
+    text:
+      `Hallo ${input.name},\n\n` +
+      `bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)} ${missing}. Wenn du Zeit hast, trag dich ein.\n\n` +
       `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }

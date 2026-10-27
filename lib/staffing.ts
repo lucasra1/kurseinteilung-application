@@ -344,6 +344,47 @@ export function triggered(plans: AusschreibungPlan[]): Triggered[] {
   );
 }
 
+type TerminSignup = { terminId: string; profileId: string };
+
+/** An Aufruf for one role of a Termin: `places` missing without a backup, and whom to call. */
+export type Aufruf<P> = {
+  terminId: string;
+  kind: Kind;
+  places: number;
+  recipients: P[];
+};
+
+/**
+ * Who gets "Du wirst gebraucht" for each Aufruf the plans trigger: everyone of `people`
+ * with the role's qualification who is on the Termin in no role, without the actor.
+ * Whoever the change just took off the Termin isn't called back either: they get
+ * "Ausgetragen".
+ */
+export function aufrufe<P extends { id: string } & Qualifications>(input: {
+  plans: AusschreibungPlan[];
+  people: P[];
+  /** Who was on the Termine before the change, and who is afterwards. */
+  before: TerminSignup[];
+  after: TerminSignup[];
+  actorId: string;
+}): Aufruf<P>[] {
+  return triggered(input.plans).flatMap(({ terminId, kind, trigger }) => {
+    if (trigger.type !== "aufruf") return [];
+    const onTermin = new Set(
+      [...input.before, ...input.after]
+        .filter((s) => s.terminId === terminId)
+        .map((s) => s.profileId),
+    );
+    const recipients = input.people.filter(
+      (person) =>
+        hasQualification(person, kind) &&
+        !onTermin.has(person.id) &&
+        person.id !== input.actorId,
+    );
+    return [{ terminId, kind, places: trigger.places, recipients }];
+  });
+}
+
 /** terminId → profileId → role */
 export type RoleSnapshot = Map<string, Map<string, Role>>;
 
