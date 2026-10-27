@@ -8,20 +8,15 @@ import {
   type TerminState,
 } from "@/lib/audit";
 import { logEvents } from "@/lib/dal/audit";
-import { isPastDate, todayInVienna } from "@/lib/dates";
+import { todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import { ConfirmationRequired, DomainError } from "@/lib/errors";
-import {
-  type PlaceMail,
-  type StaffingChange,
-  sendStaffingNotifications,
-} from "@/lib/notifications";
+import { sendStaffingNotifications } from "@/lib/notifications";
 import {
   type Aufruf,
   type AusschreibungPlan,
   ausgeschrieben,
-  diffRoles,
   hasQualification,
   isBackup,
   isFestgeschrieben,
@@ -29,7 +24,6 @@ import {
   needed,
   planAufrufe,
   planAusschreibung,
-  type RoleSnapshot,
   rankSignups,
   STAFFING_FIELDS,
   sortByPosition,
@@ -45,7 +39,6 @@ type SignupRow = {
   position: number;
   createdAt: Date;
   fullName: string;
-  email: string;
 };
 
 async function loadTermine(
@@ -97,7 +90,6 @@ async function loadSignups(tx: Tx, ids: string[]): Promise<SignupRow[]> {
       position: signups.position,
       createdAt: signups.createdAt,
       fullName: profiles.fullName,
-      email: profiles.email,
     })
     .from(signups)
     .innerJoin(profiles, eq(signups.profileId, profiles.id))
@@ -158,15 +150,6 @@ async function targetNames(
   return names;
 }
 
-function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
-  return new Map(
-    [...ranked].map(([terminId, list]) => [
-      terminId,
-      new Map(list.map((s) => [s.profileId, s.role])),
-    ]),
-  );
-}
-
 /** `planAusschreibung` for every Termin still there after `run`. */
 function planTermine(
   action: StaffingAction,
@@ -196,8 +179,8 @@ function planTermine(
   });
 }
 
-/** Someone an Aufruf writes to. */
-type AufrufRecipient = { id: string; fullName: string; email: string };
+/** Someone an Aufruf writes to; the address is looked up when sending. */
+type AufrufRecipient = { id: string; fullName: string };
 
 /** The plans' Aufrufe with their recipients; writes nothing, so the Warndialog can count them. */
 async function resolveAufrufe(
@@ -217,7 +200,6 @@ async function resolveAufrufe(
     .select({
       id: profiles.id,
       fullName: profiles.fullName,
-      email: profiles.email,
       isInstruktor: profiles.isInstruktor,
       isPraxisanleiter: profiles.isPraxisanleiter,
     })
@@ -360,8 +342,6 @@ export async function mutateStaffing<T>(opts: {
 
     const rankedBefore = rankedByTermin(before, signupsBefore);
     const rankedAfter = rankedByTermin(after, signupsAfter);
-    const changes = diffRoles(snapshot(rankedBefore), snapshot(rankedAfter));
-
     const afterStates = states(after, rankedAfter);
     // Kept in memory for the mails: read back, entries of one action have no order.
     const entries = staffingEvents({
@@ -373,73 +353,13 @@ export async function mutateStaffing<T>(opts: {
       ...names,
     });
     await logEvents(tx, action.actor, entries);
-
-    const changedIds = [...new Set(changes.map((c) => c.profileId))];
-    const stillExisting =
-      changedIds.length > 0
-        ? await tx
-            .select({ id: profiles.id })
-            .from(profiles)
-            .where(inArray(profiles.id, changedIds))
-        : [];
-
-    return {
-      result,
-      changes,
-      entries,
-      plans,
-      aufrufe,
-      afterStates,
-      before,
-      after,
-      people: new Map(
-        [...signupsBefore, ...signupsAfter].map((s) => [
-          s.profileId,
-          { fullName: s.fullName, email: s.email },
-        ]),
-      ),
-      existingProfileIds: new Set(stillExisting.map((p) => p.id)),
-    };
+    return { result, entries, after: afterStates };
   });
-
-  const enriched: StaffingChange[] = committed.changes.flatMap((change) => {
-    const termin =
-      committed.after.get(change.terminId) ??
-      committed.before.get(change.terminId);
-    const person = committed.people.get(change.profileId);
-    if (!termin || !person) return [];
-    if (isPastDate(termin.date)) return [];
-    if (!committed.existingProfileIds.has(change.profileId)) return [];
-    return [{ ...change, termin, person }];
-  });
-
-  // The rule never triggers on past Termine, and recipients are on the Termin afterwards.
-  const platzFrei: PlaceMail[] = triggered(committed.plans).flatMap(
-    ({ terminId, kind, trigger }) => {
-      const termin = committed.after.get(terminId);
-      if (trigger.type !== "backups" || !termin) return [];
-      const recipients = trigger.recipients.flatMap((id) => {
-        const person = committed.people.get(id);
-        return person ? [person] : [];
-      });
-      return [{ termin, kind, places: trigger.places, recipients }];
-    },
-  );
-
-  const gebraucht: PlaceMail[] = committed.aufrufe.flatMap(
-    ({ terminId, recipients, ...aufruf }) => {
-      const termin = committed.after.get(terminId);
-      return termin ? [{ termin, recipients, ...aufruf }] : [];
-    },
-  );
 
   await sendStaffingNotifications({
     actor: action.actor,
     entries: committed.entries,
-    after: committed.afterStates,
-    changes: enriched,
-    platzFrei,
-    gebraucht,
+    after: committed.after,
   });
   return committed.result;
 }
