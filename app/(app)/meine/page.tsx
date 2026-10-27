@@ -4,7 +4,12 @@ import { Suspense } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { SignupCta } from "@/components/signup-cta";
 import { SkeletonList } from "@/components/skeleton-list";
-import { Avatar, kursLabel, RoleChip } from "@/components/termin-bits";
+import {
+  Avatar,
+  FestgeschriebenChip,
+  kursLabel,
+  RoleChip,
+} from "@/components/termin-bits";
 import { TerminListItem } from "@/components/termin-list-item";
 import { TrainerTerminPanel } from "@/components/trainer-termin-panel";
 import { buttonVariants } from "@/components/ui/button";
@@ -151,7 +156,10 @@ function NextTermin({
   return (
     <article className="flex flex-col gap-4 rounded-2xl border bg-card p-5 shadow-xs">
       <div className="flex items-center justify-between gap-3">
-        <RoleChip role={me.role} prefix="" />
+        <span className="flex flex-wrap items-center gap-2">
+          <RoleChip role={me.role} prefix="" />
+          <FestgeschriebenChip termin={termin} />
+        </span>
         <span className="text-[13px] font-medium text-muted-foreground">
           {formatDaysUntil(termin.date)}
         </span>

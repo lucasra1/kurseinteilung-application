@@ -25,6 +25,7 @@ const T1: StaffingTermin = {
   location: "Halle 2",
   instruktorenNeeded: 1,
   praxisanleiterNeeded: 1,
+  festgeschrieben: false,
 };
 
 const T1_SNAPSHOT: TerminSnapshot = {
@@ -543,5 +544,79 @@ describe("personUpdatedEvents", () => {
 
   it("writes nothing when saving without an actual change", () => {
     expect(personUpdatedEvents(ANNA.id, was, { ...was })).toEqual([]);
+  });
+});
+
+describe("staffingEvents for Festschreiben", () => {
+  const T2: StaffingTermin = { ...T1, id: "t2", topic: "Tag 2" };
+  const T3: StaffingTermin = { ...T1, id: "t3", topic: "Tag 3" };
+
+  it("writes one entry per Termin whose flag changed, none for the others", () => {
+    const events = staffingEvents({
+      action: {
+        type: "termin.festgeschrieben",
+        actor: LEA,
+        target: { terminIds: ["t1", "t2", "t3"] },
+      },
+      before: [
+        state({ ...T1, festgeschrieben: false }, [
+          signup(ANNA, "instruktor", 1, "instruktor"),
+        ]),
+        state({ ...T2, festgeschrieben: true }, []),
+        state({ ...T3, festgeschrieben: false }, []),
+      ],
+      after: [
+        state({ ...T1, festgeschrieben: true }, [
+          signup(ANNA, "instruktor", 1, "instruktor"),
+        ]),
+        state({ ...T2, festgeschrieben: true }, []),
+        state({ ...T3, festgeschrieben: true }, []),
+      ],
+    });
+
+    expect(events).toEqual([
+      {
+        type: "termin.festgeschrieben",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: null,
+        data: { termin: T1_SNAPSHOT },
+      },
+      {
+        type: "termin.festgeschrieben",
+        terminId: "t3",
+        kursId: "k1",
+        profileId: null,
+        data: { termin: { ...T1_SNAPSHOT, topic: "Tag 3" } },
+      },
+    ]);
+  });
+
+  it("writes Aufheben only where the flag was set", () => {
+    const events = staffingEvents({
+      action: {
+        type: "termin.aufgehoben",
+        actor: LEA,
+        target: { terminIds: ["t1", "t2"] },
+      },
+      before: [
+        state({ ...T1, festgeschrieben: true }, []),
+        state({ ...T2, festgeschrieben: false }, []),
+      ],
+      after: [
+        state({ ...T1, festgeschrieben: false }, []),
+        state({ ...T2, festgeschrieben: false }, []),
+      ],
+    });
+
+    expect(events).toEqual([
+      {
+        type: "termin.aufgehoben",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: null,
+        data: { termin: T1_SNAPSHOT },
+      },
+    ]);
   });
 });

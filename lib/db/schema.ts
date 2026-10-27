@@ -52,6 +52,8 @@ export const termine = appSchema.table(
     location: text(),
     instruktorenNeeded: integer().notNull().default(0),
     praxisanleiterNeeded: integer().notNull().default(0),
+    /** Set manually by a coordinator; see `isFestgeschrieben` in lib/staffing.ts. */
+    festgeschrieben: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

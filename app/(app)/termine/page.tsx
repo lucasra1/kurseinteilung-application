@@ -23,6 +23,7 @@ async function Termine({
     kurs: firstParam(params.kurs),
     status: firstParam(params.status),
     vergangen: firstParam(params.vergangen),
+    auswahl: firstParam(params.auswahl),
   };
   return user.isAdmin ? (
     <AdminView query={query} />

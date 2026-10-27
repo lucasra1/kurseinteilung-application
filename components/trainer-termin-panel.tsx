@@ -1,4 +1,4 @@
-import { CalendarDays, Clock, MapPin, Plus } from "lucide-react";
+import { CalendarDays, Clock, Lock, MapPin, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   SignupCta,
@@ -51,6 +51,9 @@ export function TrainerTerminPanel({
           <MetaLine icon={Clock}>{formatTimeRange(termin)} Uhr</MetaLine>
           {termin.location && (
             <MetaLine icon={MapPin}>{termin.location}</MetaLine>
+          )}
+          {termin.festgeschrieben && !termin.isPast && (
+            <MetaLine icon={Lock}>Festgeschrieben</MetaLine>
           )}
         </ul>
         {termin.kursDescription && (

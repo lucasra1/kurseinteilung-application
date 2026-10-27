@@ -64,6 +64,7 @@ async function loadTermine(
       location: termine.location,
       instruktorenNeeded: termine.instruktorenNeeded,
       praxisanleiterNeeded: termine.praxisanleiterNeeded,
+      festgeschrieben: termine.festgeschrieben,
     })
     .from(termine)
     .innerJoin(kurse, eq(termine.kursId, kurse.id))

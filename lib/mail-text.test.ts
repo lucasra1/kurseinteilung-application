@@ -26,6 +26,7 @@ const T1: StaffingTermin = {
   location: "Halle 2",
   instruktorenNeeded: 1,
   praxisanleiterNeeded: 1,
+  festgeschrieben: false,
 };
 
 function signup(
@@ -360,5 +361,29 @@ describe("coordinatorMail", () => {
     ])("is „%s“", (expected, action, before, after) => {
       expect(mail(action, before, after)?.subject).toBe(expected);
     });
+  });
+});
+
+describe("coordinatorMail for Festschreiben", () => {
+  const anna = [signup(ANNA, "instruktor", 1, "instruktor")];
+  const T2: StaffingTermin = { ...T1, id: "t2", topic: "Tag 2" };
+
+  it("sends no mail for Festschreiben or Aufheben while no role changes", () => {
+    const open = [state(T1, anna), state(T2, [])];
+    const locked = [
+      state({ ...T1, festgeschrieben: true }, anna),
+      state({ ...T2, festgeschrieben: true }, []),
+    ];
+    const target = { terminIds: ["t1", "t2"] };
+    expect(
+      mail(
+        { type: "termin.festgeschrieben", actor: LEA, target },
+        open,
+        locked,
+      ),
+    ).toBeNull();
+    expect(
+      mail({ type: "termin.aufgehoben", actor: LEA, target }, locked, open),
+    ).toBeNull();
   });
 });
