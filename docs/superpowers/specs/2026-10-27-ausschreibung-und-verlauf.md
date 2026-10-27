@@ -170,6 +170,7 @@ Nur Koordinator:innen, jeweils Neuestes oben, 50 Einträge, dann „Mehr anzeige
 - **Termin-Panel**: zugeklappter Abschnitt „Verlauf“ unten.
 - **Kurs-Seite** (`/kurse/[id]`): Abschnitt „Verlauf“ mit allem zum Kurs und seinen Terminen, auch gelöschten.
 - **Personen**: Tippen auf eine Person öffnet ein Sheet mit ihrem Verlauf: was mit ihr passiert ist und was sie selbst getan hat.
+- **Verlauf** (`/verlauf`, eigener Navigationspunkt, am Handy in der Tab-Leiste): alle Einträge, nach Aktion gruppiert. Jede Gruppe nennt Termin, Kurs oder Person und verlinkt dorthin, solange es sie noch gibt (Termin-Panel, Kurs-Seite, Personen-Sheet). Filter-Chips nach Bereich: Alle / Besetzung / Termine & Kurse / Personen. Zur Besetzung zählt jede Aktion, die eine Eintragung geändert hat, also auch eine entfernte Person oder ein gelöschter Termin oder Kurs, solange dort jemand eingetragen war.
 
 Darstellung als Sätze; Folgen derselben Aktion stehen eingerückt darunter:
 
@@ -177,8 +178,6 @@ Darstellung als Sätze; Folgen derselben Aktion stehen eingerückt darunter:
 >   → 1 Instruktor-Platz ausgeschrieben, angeschrieben: Ben Maier, Clara Ott
 >
 > **Sa., 31.10., 16:40** · Ben Maier hat den Platz übernommen (Backup → Instruktor)
-
-Es gibt keine Seite mit dem gesamten Verlauf. Der Verlauf eines gelöschten Kurses ist daher nur noch in der Datenbank.
 
 ## 6. Umsetzung
 
@@ -261,7 +260,7 @@ Abweichend von der Grund-Spec gibt es jetzt automatische Tests, aber nur für re
 
 - **Excel-Import von Kursen und Terminen**: eigene Spec, sobald die Beispieldatei vorliegt (eine Zeile = ein Termin, Spalte mit dem Kursnamen). Dort zu klären: Kursname existiert schon, dieselbe Datei zweimal hochgeladen, Vorschau vor dem Speichern. Der Import schreibt in den Verlauf.
 - Tagesbericht für Koordinator:innen, Resend Pro.
-- Seite mit dem gesamten Verlauf, Verlauf für Einladungslink und Logins.
+- Verlauf für Einladungslink und Logins.
 - Platz übernehmen ohne Login per Link.
 - Mail an die übrigen Backups, wenn der Platz übernommen wurde.
 - Fristen oder Erinnerungen für ausgeschriebene Plätze.

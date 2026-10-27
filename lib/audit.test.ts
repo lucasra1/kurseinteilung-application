@@ -729,13 +729,16 @@ describe("staffingEvents for Ausschreibung", () => {
           termin: T1_SNAPSHOT,
           kind: "instruktor",
           places: 1,
-          angeschrieben: ["Ben Maier", "Clara Ott"],
+          recipients: [
+            { profileId: BEN.id, personName: "Ben Maier" },
+            { profileId: CLARA.id, personName: "Clara Ott" },
+          ],
         },
       },
     ]);
   });
 
-  it("writes the withdrawal, then the Aufruf with how many qualified were written to", () => {
+  it("writes the withdrawal, then the Aufruf with who was written to, by ID and name only", () => {
     const events = staffingEvents({
       action: {
         type: "signup.removed",
@@ -761,7 +764,12 @@ describe("staffingEvents for Ausschreibung", () => {
           terminId: "t1",
           kind: "instruktor",
           places: 1,
-          recipients: [BEN, CLARA],
+          // With more than ID and name: the address must not reach the Verlauf.
+          recipients: [BEN, CLARA].map((p) => ({
+            profileId: p.id,
+            personName: p.fullName,
+            email: `${p.id}@example.org`,
+          })),
         },
       ],
     });
@@ -788,7 +796,10 @@ describe("staffingEvents for Ausschreibung", () => {
           termin: T1_SNAPSHOT,
           kind: "instruktor",
           places: 1,
-          angeschrieben: 2,
+          recipients: [
+            { profileId: BEN.id, personName: "Ben Maier" },
+            { profileId: CLARA.id, personName: "Clara Ott" },
+          ],
         },
       },
     ]);

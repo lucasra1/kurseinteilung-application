@@ -1,13 +1,23 @@
-// German sentences for Verlauf entries (and later the mails built from them). Pure.
+// German sentences for Verlauf entries, grouped by action for display; the mails reuse the
+// sentences. Pure.
 import {
   type AuditEvent,
+  aufrufCount,
+  ausgeschriebenTo,
   isConsequence,
   type RoleShift,
   TERMIN_FIELDS,
   type TerminField,
   type TerminSnapshot,
+  terminOf,
 } from "@/lib/audit";
 import { formatDate, formatTime } from "@/lib/dates";
+import {
+  type ExistingSubjects,
+  type HistoryScope,
+  type SubjectKind,
+  subjectHref,
+} from "@/lib/history-source";
 import {
   hasQualification,
   isBackup,
@@ -120,19 +130,21 @@ export function auditSentence(event: AuditEvent): string {
       return `${actor} hat ${whom(event, personName)} den Platz gegeben${roleSuffix(from, to)}`;
     }
     case "place.ausgeschrieben": {
-      const { kind, places, angeschrieben } = event.data;
+      const { kind, places } = event.data;
+      const names = ausgeschriebenTo(event.data);
       const text = `${placesLabel(places, kind)} ausgeschrieben`;
-      return angeschrieben.length > 0
-        ? `${text}, angeschrieben: ${angeschrieben.join(", ")}`
+      return names.length > 0
+        ? `${text}, angeschrieben: ${names.join(", ")}`
         : text;
     }
     case "place.aufruf": {
-      const { kind, places, angeschrieben } = event.data;
+      const { kind, places } = event.data;
+      const count = aufrufCount(event.data);
       const missing = `${placesLabel(places, kind)} ${places === 1 ? "fehlt" : "fehlen"}`;
-      if (angeschrieben === 0) {
+      if (count === 0) {
         return `${missing}, kein Backup und sonst niemand qualifiziert`;
       }
-      return `${missing}, kein Backup: ${qualifiedCount(angeschrieben)} angeschrieben`;
+      return `${missing}, kein Backup: ${qualifiedCount(count)} angeschrieben`;
     }
     case "kurs.created":
       return `${actor} hat den Kurs „${event.data.kursTitle}“ angelegt`;
@@ -227,23 +239,30 @@ export function formatAuditTime(at: Date): string {
   return `${part.weekday}, ${part.day}.${part.month}., ${part.hour}:${part.minute}`;
 }
 
+/** The Termin, Kurs or person a group is about, named as it was at the time. */
+export type HistorySubject = {
+  kind: SubjectKind;
+  id: string;
+  label: string;
+  /** On the Verlauf page, while it still exists. */
+  href?: string;
+};
+
 /**
  * One action in the Verlauf: its main entry and, indented below, what followed from it.
  * Outside the Termin panel, one group per Termin of the action.
  */
 export type HistoryGroup = {
   actionId: string;
-  /** Outside the Termin panel: the Termin this part of the action is about. */
-  termin?: { id: string; label: string };
+  /**
+   * Outside the Termin panel: the Termin this part of the action is about. On the Verlauf
+   * page, for a part without a Termin, its Kurs or else its person.
+   */
+  about?: HistorySubject;
   time: string;
   text: string;
   consequences: string[];
 };
-
-/** Where a Verlauf is shown: a Termin's panel, a Kurs page, or a person's sheet. */
-export const HISTORY_SCOPES = ["termin", "kurs", "person"] as const;
-
-export type HistoryScope = (typeof HISTORY_SCOPES)[number];
 
 /** One page of a Verlauf; `nextCursor` loads the older entries, null if there are none. */
 export type HistoryView = { groups: HistoryGroup[]; nextCursor: string | null };
@@ -257,19 +276,40 @@ function groupBy<K, T>(items: T[], keyOf: (item: T) => K): Map<K, T[]> {
   return groups;
 }
 
-function terminOf(event: AuditEvent): TerminSnapshot | undefined {
-  return "termin" in event.data ? event.data.termin : undefined;
-}
-
-/** "Tag 1, Sa., 07.11.2026"; for a person also the Kurs: "Erste Hilfe – Tag 1, …" */
+/** "Tag 1, Sa., 07.11.2026"; outside the Kurs page also the Kurs: "Erste Hilfe – Tag 1, …" */
 function terminLabel(termin: TerminSnapshot, scope: HistoryScope): string {
   const name =
-    scope === "person" ? `${termin.kursTitle} – ${termin.topic}` : termin.topic;
+    scope === "kurs" ? termin.topic : `${termin.kursTitle} – ${termin.topic}`;
   return `${name}, ${formatDate(termin.date)}`;
 }
 
+function mainOf(entries: AuditEvent[]): AuditEvent {
+  return entries.find((e) => !isConsequence(e.type)) ?? entries[0];
+}
+
+/** What one part of an action (its entries on one Termin, or those on none) is about. */
+function subjectOf(
+  part: AuditEvent[],
+  scope: HistoryScope,
+): HistorySubject | undefined {
+  const terminId = part[0].terminId;
+  const termin = part.map(terminOf).find(Boolean);
+  if (terminId && termin) {
+    return { kind: "termin", id: terminId, label: terminLabel(termin, scope) };
+  }
+  if (scope !== "all") return undefined;
+  const { kursId, profileId, data } = mainOf(part);
+  if (kursId && "kursTitle" in data) {
+    return { kind: "kurs", id: kursId, label: data.kursTitle };
+  }
+  if (profileId && "personName" in data) {
+    return { kind: "person", id: profileId, label: data.personName };
+  }
+  return undefined;
+}
+
 function group(actionId: string, entries: AuditEvent[]): HistoryGroup {
-  const main = entries.find((e) => !isConsequence(e.type)) ?? entries[0];
+  const main = mainOf(entries);
   const rest = entries.filter((e) => e !== main);
   // Read back, an action's entries have no order: role changes before Ausschreibungen.
   const roleChanges = rest.filter((e) => e.type === "signup.role_changed");
@@ -295,24 +335,24 @@ function perTermin(entries: AuditEvent[]): AuditEvent[][] {
 
 /**
  * Entries (newest first) grouped by action, in the order the actions first appear. Outside
- * the Termin panel each action is split per Termin, and each part names its Termin.
+ * the Termin panel each action is split per Termin, and each part names what it's about;
+ * subjects in `existing` get a link.
  */
 export function historyGroups(
   events: AuditEvent[],
   scope: HistoryScope = "termin",
+  existing?: ExistingSubjects,
 ): HistoryGroup[] {
   return [...groupBy(events, (e) => e.actionId)].flatMap(
     ([actionId, entries]) => {
       if (scope === "termin") return [group(actionId, entries)];
       return perTermin(entries).map((part) => {
-        const terminId = part[0].terminId;
-        const termin = part.map(terminOf).find(Boolean);
-        return terminId && termin
-          ? {
-              ...group(actionId, part),
-              termin: { id: terminId, label: terminLabel(termin, scope) },
-            }
-          : group(actionId, part);
+        const about = subjectOf(part, scope);
+        if (!about) return group(actionId, part);
+        const linked = existing?.[about.kind].has(about.id)
+          ? { ...about, href: subjectHref(about.kind, about.id) }
+          : about;
+        return { ...group(actionId, part), about: linked };
       });
     },
   );

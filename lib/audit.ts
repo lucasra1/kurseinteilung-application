@@ -48,6 +48,21 @@ export type TerminChanges = Partial<
   Record<TerminField, [string | number | null, string | number | null]>
 >;
 
+/** Someone a mail goes to, by ID and name: the address is looked up when sending. */
+export type Recipient = { profileId: string; personName: string };
+
+/** The names of the backups an Ausschreibung wrote to, from older entries too. */
+export function ausgeschriebenTo(
+  data: AuditData["place.ausgeschrieben"],
+): string[] {
+  return data.recipients?.map((r) => r.personName) ?? data.angeschrieben ?? [];
+}
+
+/** How many qualified an Aufruf wrote to, from older entries too. */
+export function aufrufCount(data: AuditData["place.aufruf"]): number {
+  return data.recipients?.length ?? data.angeschrieben ?? 0;
+}
+
 /** `data` per event type. */
 export type AuditData = {
   "signup.created": { termin: TerminSnapshot } & RoleShift;
@@ -63,24 +78,28 @@ export type AuditData = {
   /** An admin gave a backup an ausgeschriebenen place (Backup → role). */
   "signup.place_given": { termin: TerminSnapshot } & RoleShift;
   /**
-   * A consequence: `places` of `kind` ausgeschrieben; `angeschrieben` are the names of the
-   * backups who got "Platz frei".
+   * A consequence: `places` of `kind` ausgeschrieben; `recipients` are the backups who got
+   * "Platz frei". Read with `ausgeschriebenTo`.
    */
   "place.ausgeschrieben": {
     termin: TerminSnapshot;
     kind: Kind;
     places: number;
-    angeschrieben: string[];
+    recipients?: Recipient[];
+    /** Instead of `recipients` on older entries: only the backups' names. */
+    angeschrieben?: string[];
   };
   /**
-   * A consequence: `places` of `kind` missing without a backup; `angeschrieben` is how many
-   * qualified got "Du wirst gebraucht".
+   * A consequence: `places` of `kind` missing without a backup; `recipients` are the
+   * qualified who got "Du wirst gebraucht". Read with `aufrufCount`.
    */
   "place.aufruf": {
     termin: TerminSnapshot;
     kind: Kind;
     places: number;
-    angeschrieben: number;
+    recipients?: Recipient[];
+    /** Instead of `recipients` on older entries: only how many were written to. */
+    angeschrieben?: number;
   };
   "termin.updated": { termin: TerminSnapshot; changes: TerminChanges };
   "termin.deleted": { termin: TerminSnapshot };
@@ -126,6 +145,13 @@ export type KursFields = { title: string; description: string };
 export type KursChanges = Partial<Record<keyof KursFields, [string, string]>>;
 
 export type AuditType = keyof AuditData;
+
+/** The Termin an entry is about, as it was then; none for a Kurs or person alone. */
+export function terminOf(entry: {
+  data: AuditData[AuditType];
+}): TerminSnapshot | undefined {
+  return "termin" in entry.data ? entry.data.termin : undefined;
+}
 
 const CONSEQUENCES: ReadonlySet<AuditType> = new Set([
   "signup.role_changed",
@@ -240,7 +266,7 @@ export function staffingEvents(input: {
   /** What `planAusschreibung` decided per Termin. */
   plans?: AusschreibungPlan[];
   /** The Aufrufe of those plans, with the qualified written to (see `planAufrufe`). */
-  aufrufe?: Aufruf<unknown>[];
+  aufrufe?: Aufruf<Recipient>[];
   /** The target person's name, needed when they're on none of the Termine. */
   targetName?: string;
   /** The target Kurs' title, needed when it has no Termine. */
@@ -307,24 +333,21 @@ export function staffingEvents(input: {
         data: { termin, ...data },
       }));
     const ausgeschrieben: AuditEntry[] = triggers.flatMap(
-      ({ terminId, kind, trigger }) =>
-        terminId === was.termin.id && trigger.type === "backups"
-          ? [
-              {
-                type: "place.ausgeschrieben",
-                ...refs,
-                profileId: null,
-                data: {
-                  termin,
-                  kind,
-                  places: trigger.places,
-                  angeschrieben: trigger.recipients.map(
-                    (id) => people.get(id) ?? "",
-                  ),
-                },
-              },
-            ]
-          : [],
+      ({ terminId, kind, trigger }) => {
+        if (terminId !== was.termin.id || trigger.type !== "backups") return [];
+        const recipients = trigger.recipients.map((profileId) => ({
+          profileId,
+          personName: people.get(profileId) ?? "",
+        }));
+        return [
+          {
+            type: "place.ausgeschrieben",
+            ...refs,
+            profileId: null,
+            data: { termin, kind, places: trigger.places, recipients },
+          },
+        ];
+      },
     );
     const aufrufe: AuditEntry[] = (input.aufrufe ?? [])
       .filter((aufruf) => aufruf.terminId === was.termin.id)
@@ -332,7 +355,16 @@ export function staffingEvents(input: {
         type: "place.aufruf",
         ...refs,
         profileId: null,
-        data: { termin, kind, places, angeschrieben: recipients.length },
+        data: {
+          termin,
+          kind,
+          places,
+          // Only ID and name, whatever else the caller loaded.
+          recipients: recipients.map(({ profileId, personName }) => ({
+            profileId,
+            personName,
+          })),
+        },
       }));
     return [main, ...consequences, ...ausgeschrieben, ...aufrufe];
   });

@@ -405,32 +405,3 @@ export function planAufrufe<P extends { id: string } & Qualifications>(input: {
     return [{ terminId, kind, places: trigger.places, recipients }];
   });
 }
-
-/** terminId → profileId → role */
-export type RoleSnapshot = Map<string, Map<string, Role>>;
-
-export type RoleChange = {
-  terminId: string;
-  profileId: string;
-  from: Role | null;
-  to: Role | null;
-};
-
-export function diffRoles(
-  before: RoleSnapshot,
-  after: RoleSnapshot,
-): RoleChange[] {
-  const changes: RoleChange[] = [];
-  const terminIds = new Set([...before.keys(), ...after.keys()]);
-  for (const terminId of terminIds) {
-    const rolesBefore = before.get(terminId) ?? new Map<string, Role>();
-    const rolesAfter = after.get(terminId) ?? new Map<string, Role>();
-    const profileIds = new Set([...rolesBefore.keys(), ...rolesAfter.keys()]);
-    for (const profileId of profileIds) {
-      const from = rolesBefore.get(profileId) ?? null;
-      const to = rolesAfter.get(profileId) ?? null;
-      if (from !== to) changes.push({ terminId, profileId, from, to });
-    }
-  }
-  return changes;
-}
