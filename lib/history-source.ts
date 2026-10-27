@@ -30,7 +30,7 @@ export function subjectHref(kind: SubjectKind, id: string): string {
   return SUBJECT_HREF[kind](id);
 }
 
-/** The filters on the Verlauf page, in chip order; every entry type belongs to one. */
+/** The filters on the Verlauf page, in chip order; see `bereicheOf`. */
 export const BEREICHE = ["besetzung", "termine-kurse", "personen"] as const;
 
 export type Bereich = (typeof BEREICHE)[number];
@@ -41,6 +41,7 @@ export const BEREICH_LABEL: Record<Bereich, string> = {
   personen: "Personen",
 };
 
+/** Each entry type's own Bereich. */
 const BEREICH_OF: Record<AuditType, Bereich> = {
   "signup.created": "besetzung",
   "signup.removed": "besetzung",
