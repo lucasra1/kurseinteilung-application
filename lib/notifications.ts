@@ -13,11 +13,11 @@ import {
   staffingMails,
 } from "@/lib/mail-text";
 
-/** What one staffing action did, as `mutateStaffing` hands it over after the commit. */
-export type StaffingOutcome = Pick<
-  ActionMailInput,
-  "actor" | "entries" | "after"
->;
+/**
+ * What `mutateStaffing` hands over after the commit: the actor, the entries it wrote, and
+ * the Termine before and after the action.
+ */
+export type StaffingOutcome = Omit<ActionMailInput, "today" | "appUrl">;
 
 /** Addresses by profile ID; a removed account has none. */
 async function addresses(ids: string[]): Promise<Map<string, string>> {

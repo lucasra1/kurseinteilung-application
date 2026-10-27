@@ -152,11 +152,16 @@ function subject(main: AuditEntry, termin: TerminSnapshot, actor: Actor) {
   }
 }
 
-/** One staffing action, as `mutateStaffing` hands it over after the commit. */
+/**
+ * One committed staffing action: what `mutateStaffing` hands over (`StaffingOutcome`), plus
+ * today's date and APP_URL, which `sendStaffingNotifications` adds.
+ */
 export type ActionMailInput = {
   actor: Actor;
   /** The action's entries in the order `staffingEvents` built them. */
   entries: AuditEntry[];
+  /** The Termine before the action, for the signup order of the Betroffene mails. */
+  before: TerminState[];
   /** The Termine afterwards; deleted ones are missing. */
   after: TerminState[];
   /** YYYY-MM-DD in Vienna */
@@ -334,6 +339,25 @@ function betroffeneMails(
   return [{ group: "betroffene" as const, profileId, ...mail }];
 }
 
+/**
+ * `entries` per Termin, each Termin's in the signup order of the people they're about: as
+ * before the action, then the newly signed up. `staffingEvents` puts the target first.
+ */
+function inSignupOrder(input: ActionMailInput, entries: AuditEntry[]) {
+  const termine = [...new Set(input.entries.map((e) => e.terminId))];
+  const signups = (states: TerminState[], terminId: AuditEntry["terminId"]) =>
+    states.find((s) => s.termin.id === terminId)?.signups ?? [];
+  const place = ({ terminId, profileId }: AuditEntry) =>
+    [...signups(input.before, terminId), ...signups(input.after, terminId)]
+      .map((s) => s.profileId)
+      .indexOf(profileId ?? "");
+  return [...entries].sort(
+    (a, b) =>
+      termine.indexOf(a.terminId) - termine.indexOf(b.terminId) ||
+      place(a) - place(b),
+  );
+}
+
 /** Every mail of one staffing action, built from its entries alone, in sending order. */
 export function staffingMails(input: ActionMailInput): StaffingMail[] {
   const { actor, entries, appUrl } = input;
@@ -350,10 +374,10 @@ export function staffingMails(input: ActionMailInput): StaffingMail[] {
   );
   const admins = adminMail(input);
   const mails: StaffingMail[] = [
-    ...upcoming.flatMap((entry) => [
-      ...placeMails(entry, appUrl),
-      ...betroffeneMails(entry, skip, appUrl),
-    ]),
+    ...upcoming.flatMap((entry) => placeMails(entry, appUrl)),
+    ...inSignupOrder(input, upcoming).flatMap((entry) =>
+      betroffeneMails(entry, skip, appUrl),
+    ),
     ...(admins ? [{ group: "admins" as const, ...admins }] : []),
   ];
   const rank = (mail: StaffingMail) => MAIL_GROUPS.indexOf(mail.group);

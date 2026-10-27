@@ -12,7 +12,10 @@ import { todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import { ConfirmationRequired, DomainError } from "@/lib/errors";
-import { sendStaffingNotifications } from "@/lib/notifications";
+import {
+  type StaffingOutcome,
+  sendStaffingNotifications,
+} from "@/lib/notifications";
 import {
   type Aufruf,
   type AusschreibungPlan,
@@ -342,25 +345,28 @@ export async function mutateStaffing<T>(opts: {
 
     const rankedBefore = rankedByTermin(before, signupsBefore);
     const rankedAfter = rankedByTermin(after, signupsAfter);
-    const afterStates = states(after, rankedAfter);
+    const terminStates = {
+      before: states(before, rankedBefore),
+      after: states(after, rankedAfter),
+    };
     // Kept in memory for the mails: read back, entries of one action have no order.
     const entries = staffingEvents({
       action,
-      before: states(before, rankedBefore),
-      after: afterStates,
+      ...terminStates,
       plans,
       aufrufe,
       ...names,
     });
     await logEvents(tx, action.actor, entries);
-    return { result, entries, after: afterStates };
+    const outcome: StaffingOutcome = {
+      actor: action.actor,
+      entries,
+      ...terminStates,
+    };
+    return { result, outcome };
   });
 
-  await sendStaffingNotifications({
-    actor: action.actor,
-    entries: committed.entries,
-    after: committed.after,
-  });
+  await sendStaffingNotifications(committed.outcome);
   return committed.result;
 }
 

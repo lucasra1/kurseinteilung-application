@@ -75,6 +75,7 @@ function mail(
   return adminMail({
     actor: action.actor,
     entries,
+    before,
     after,
     today,
     appUrl: APP_URL,
@@ -663,6 +664,7 @@ describe("staffingMails", () => {
     return staffingMails({
       actor: action.actor,
       entries,
+      before,
       after,
       today,
       appUrl: APP_URL,
@@ -1132,6 +1134,49 @@ describe("staffingMails", () => {
         ],
       ]);
     });
+  });
+
+  it("tells those whose role changed in signup order, not the moved person first", () => {
+    expect(
+      sent(
+        mails(
+          {
+            type: "signup.moved",
+            actor: LEA,
+            target: { terminId: "t1", profileId: CLARA.id },
+            direction: "up",
+          },
+          [
+            state(T1, [
+              signup(BEN, "instruktor", 1, "instruktor"),
+              signup(CLARA, "instruktor", 2, "backup-instruktor"),
+            ]),
+          ],
+          [
+            state(T1, [
+              signup(CLARA, "instruktor", 1, "instruktor"),
+              signup(BEN, "instruktor", 2, "backup-instruktor"),
+            ]),
+          ],
+        ),
+      ),
+    ).toEqual([
+      [
+        "betroffene",
+        BEN.id,
+        "Neue Rolle: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      ],
+      [
+        "betroffene",
+        CLARA.id,
+        "Neue Rolle: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      ],
+      [
+        "admins",
+        "alle Koordinator:innen",
+        "Besetzung geändert: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      ],
+    ]);
   });
 
   it("tells everyone on a deleted Termin they're off it", () => {
