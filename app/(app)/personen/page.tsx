@@ -1,32 +1,42 @@
 import { Link2 } from "lucide-react";
 import { Suspense } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { HistoryList } from "@/components/history-list";
 import { SkeletonList } from "@/components/skeleton-list";
+import { TerminPanel } from "@/components/termin-panel";
+import { historyGroups } from "@/lib/audit-text";
+import { type HistoryPage, personHistory } from "@/lib/dal/audit";
 import { requireAdmin } from "@/lib/dal/auth";
-import { listPeople } from "@/lib/dal/profiles";
+import { listPeople, type PersonView } from "@/lib/dal/profiles";
 import { getInviteToken } from "@/lib/dal/settings";
 import { env } from "@/lib/env";
+import { firstParam } from "@/lib/url";
 import { COORDINATOR, countOf } from "@/lib/wording";
-import { newInviteLink } from "./actions";
+import { morePersonHistory, newInviteLink } from "./actions";
 import { CopyButton } from "./copy-button";
 import { PeopleList } from "./people-list";
 
-export default function PersonenPage() {
+export default function PersonenPage({ searchParams }: PageProps<"/personen">) {
   return (
     <Suspense fallback={<SkeletonList rows={2} />}>
-      <Personen />
+      <Personen searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Personen() {
-  const [currentUser, people, token] = await Promise.all([
+async function Personen({
+  searchParams,
+}: Pick<PageProps<"/personen">, "searchParams">) {
+  const personId = firstParam((await searchParams).person);
+  const [currentUser, people, token, history] = await Promise.all([
     requireAdmin(),
     listPeople(),
     getInviteToken(),
+    personId ? personHistory(personId) : null,
   ]);
   const link = `${env.APP_URL}/einladung/${token}`;
   const adminCount = people.filter((p) => p.isAdmin).length;
+  const selected = history && people.find((p) => p.id === personId);
 
   return (
     <div className="flex flex-col gap-5">
@@ -98,6 +108,35 @@ async function Personen() {
           upcomingSignups: p.upcomingSignups,
         }))}
       />
+
+      {selected && history && (
+        <PersonSheet key={selected.id} person={selected} history={history} />
+      )}
     </div>
+  );
+}
+
+/** A person's Verlauf: what happened to them and what they did themselves. */
+function PersonSheet({
+  person,
+  history,
+}: {
+  person: PersonView;
+  history: HistoryPage;
+}) {
+  const groups = historyGroups(history.events, "person");
+  return (
+    <TerminPanel
+      floating
+      closeHref="/personen"
+      eyebrow="Verlauf"
+      title={person.fullName}
+    >
+      <HistoryList
+        key={groups[0]?.actionId ?? "leer"}
+        initial={{ groups, nextCursor: history.nextCursor }}
+        loadMore={morePersonHistory.bind(null, person.id)}
+      />
+    </TerminPanel>
   );
 }
