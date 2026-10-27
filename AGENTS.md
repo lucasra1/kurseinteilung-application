@@ -17,3 +17,17 @@ Kurseinteilung: Instruktoren and Praxisanleiter sign up for Kurs-Termine; see `d
 - `pnpm db:generate` / `pnpm db:migrate`: Drizzle migrations (schema in `lib/db/schema.ts`, tables in Postgres schema `app`)
 - All data access and authorization live in `lib/dal/` (server-only). No RLS, no Postgres functions.
 - UI copy is German ("du" form).
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (`lucasra1/kurseinteilung-application`), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
