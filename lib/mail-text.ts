@@ -16,6 +16,8 @@ import {
   type Kind,
   needed,
   placesLabel,
+  ROLE_LABEL,
+  type Role,
 } from "@/lib/staffing";
 import { placesFreedText } from "@/lib/warning-text";
 
@@ -150,11 +152,8 @@ function subject(main: AuditEntry, termin: TerminSnapshot, actor: Actor) {
   }
 }
 
-/**
- * The mail to the Praxisanleiterkoordinator:innen about one staffing action: per Termin the
- * action, its consequences as "– …" lines, the Stand afterwards and a link.
- */
-export function adminMail(input: {
+/** One staffing action, as `mutateStaffing` hands it over after the commit. */
+export type ActionMailInput = {
   actor: Actor;
   /** The action's entries in the order `staffingEvents` built them. */
   entries: AuditEntry[];
@@ -163,7 +162,13 @@ export function adminMail(input: {
   /** YYYY-MM-DD in Vienna */
   today: string;
   appUrl: string;
-}): MailText | null {
+};
+
+/**
+ * The mail to the Praxisanleiterkoordinator:innen about one staffing action: per Termin the
+ * action, its consequences as "– …" lines, the Stand afterwards and a link.
+ */
+export function adminMail(input: ActionMailInput): MailText | null {
   const { actor } = input;
   const list = blocks(input.entries).filter(
     (block) => block.termin.date >= input.today && changesStaffing(block),
@@ -234,4 +239,123 @@ export function gebrauchtMail(input: PlaceMailInput): MailText {
       `bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)} ${missing}. Wenn du Zeit hast, trag dich ein.\n\n` +
       `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
   };
+}
+
+/** "Eingetragen", "Ausgetragen" or "Neue Rolle" to someone whose role another person changed. */
+export function betroffeneMail(input: {
+  termin: TerminSnapshot;
+  name: string;
+  from: Role | null;
+  to: Role | null;
+  appUrl: string;
+}): MailText {
+  const { termin, from, to } = input;
+  const what = `„${termin.kursTitle} – ${termin.topic}“`;
+  const when = formatTerminWhen(termin);
+  const at = `${termin.kursTitle}, ${formatDate(termin.date)}`;
+  const greeting = `Hallo ${input.name},\n\n`;
+  const link = `\n\n${input.appUrl}/meine${SIGNATURE}`;
+  if (from && to) {
+    return {
+      subject: `Neue Rolle: ${at}`,
+      text: `${greeting}deine Rolle für ${what} am ${when} hat sich geändert: ${ROLE_LABEL[from]} → ${ROLE_LABEL[to]}.${link}`,
+    };
+  }
+  if (to) {
+    return {
+      subject: `Eingetragen: ${at}`,
+      text: `${greeting}du wurdest für ${what} am ${when} als ${ROLE_LABEL[to]} eingetragen.${link}`,
+    };
+  }
+  return {
+    subject: `Ausgetragen: ${at}`,
+    text: `${greeting}du wurdest von ${what} am ${when} ausgetragen.${link}`,
+  };
+}
+
+/** The mail groups in sending order (spec 4, Kontingent). */
+export const MAIL_GROUPS = [
+  "platz-frei",
+  "gebraucht",
+  "betroffene",
+  "admins",
+] as const;
+
+export type MailGroup = (typeof MAIL_GROUPS)[number];
+
+/**
+ * A staffing mail, to one person by profile ID (the address is looked up when sending) or
+ * to every admin but the actor.
+ */
+export type StaffingMail = MailText &
+  (
+    | { group: Exclude<MailGroup, "admins">; profileId: string }
+    | { group: "admins" }
+  );
+
+/** "Platz frei" to each backup an Ausschreibung names, "Du wirst gebraucht" to each Aufruf's. */
+function placeMails(entry: AuditEntry, appUrl: string): StaffingMail[] {
+  if (
+    (entry.type !== "place.ausgeschrieben" && entry.type !== "place.aufruf") ||
+    !entry.terminId
+  ) {
+    return [];
+  }
+  const [group, text] =
+    entry.type === "place.ausgeschrieben"
+      ? (["platz-frei", platzFreiMail] as const)
+      : (["gebraucht", gebrauchtMail] as const);
+  const { termin, kind, places, recipients = [] } = entry.data;
+  const id = entry.terminId;
+  return recipients.map(({ profileId, personName }) => ({
+    group,
+    profileId,
+    ...text({
+      termin: { ...termin, id },
+      kind,
+      places,
+      name: personName,
+      appUrl,
+    }),
+  }));
+}
+
+/** A mail to the person whose role the entry changed, unless they're in `skip`. */
+function betroffeneMails(
+  entry: AuditEntry,
+  skip: ReadonlySet<string>,
+  appUrl: string,
+) {
+  const { profileId, data } = entry;
+  if (!profileId || skip.has(profileId)) return [];
+  if (!("from" in data) || data.from === data.to || !data.termin) return [];
+  const { termin, personName, from, to } = data;
+  const mail = betroffeneMail({ termin, name: personName, from, to, appUrl });
+  return [{ group: "betroffene" as const, profileId, ...mail }];
+}
+
+/** Every mail of one staffing action, built from its entries alone, in sending order. */
+export function staffingMails(input: ActionMailInput): StaffingMail[] {
+  const { actor, entries, appUrl } = input;
+  // The actor knows; a removed account has no address any more.
+  const skip = new Set([
+    actor.id,
+    ...entries.flatMap((e) =>
+      e.type === "person.removed" && e.profileId ? [e.profileId] : [],
+    ),
+  ]);
+  const upcoming = entries.filter(
+    (e) =>
+      "termin" in e.data && e.data.termin && e.data.termin.date >= input.today,
+  );
+  const admins = adminMail(input);
+  const mails: StaffingMail[] = [
+    ...upcoming.flatMap((entry) => [
+      ...placeMails(entry, appUrl),
+      ...betroffeneMails(entry, skip, appUrl),
+    ]),
+    ...(admins ? [{ group: "admins" as const, ...admins }] : []),
+  ];
+  const rank = (mail: StaffingMail) => MAIL_GROUPS.indexOf(mail.group);
+  return mails.sort((a, b) => rank(a) - rank(b));
 }
