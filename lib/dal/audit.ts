@@ -1,6 +1,11 @@
 import "server-only";
 import { and, desc, eq, lt, or, type SQL, sql } from "drizzle-orm";
 import type { Actor, AuditEntry, AuditEvent } from "@/lib/audit";
+import {
+  type HistoryScope,
+  type HistoryView,
+  historyGroups,
+} from "@/lib/audit-text";
 import { requireAdmin } from "@/lib/dal/auth";
 import { db, type Tx } from "@/lib/db/client";
 import { auditEvents } from "@/lib/db/schema";
@@ -31,15 +36,13 @@ export async function logEvents(
   );
 }
 
-export type HistoryPage = {
+type HistoryPage = {
   /** Newest first. */
   events: AuditEvent[];
-  /** Pass to the same reader for older entries; null if there are none. */
   nextCursor: string | null;
 };
 
 const PAGE_SIZE = 50;
-const EMPTY: HistoryPage = { events: [], nextCursor: null };
 
 // Microsecond precision: a JS Date would round and could skip or repeat entries.
 const cursorOf = sql<string>`to_char(${auditEvents.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
@@ -88,38 +91,27 @@ function toEvents(rows: { row: typeof auditEvents.$inferSelect }[]) {
   return rows.map(({ row }) => row as AuditEvent);
 }
 
-/** Everything that happened on a Termin. Admins only. */
-export async function terminHistory(
-  terminId: string,
-  cursor?: string,
-): Promise<HistoryPage> {
-  await requireAdmin();
-  if (!uuidSchema.safeParse(terminId).success) return EMPTY;
-  return historyPage(eq(auditEvents.terminId, terminId), cursor);
-}
+const SCOPE_FILTER: Record<HistoryScope, (id: string) => SQL> = {
+  termin: (id) => eq(auditEvents.terminId, id),
+  // The Kurs and its Termine, also deleted ones.
+  kurs: (id) => eq(auditEvents.kursId, id),
+  // What happened to the person and what they did themselves.
+  person: (id) =>
+    or(eq(auditEvents.profileId, id), eq(auditEvents.actorId, id)) as SQL,
+};
 
-/** Everything about a Kurs and its Termine, also deleted ones. Admins only. */
-export async function kursHistory(
-  kursId: string,
+/** A page of the Verlauf of a Termin, Kurs or person, older than `cursor`. Admins only. */
+export async function getHistory(
+  scope: HistoryScope,
+  id: string,
   cursor?: string,
-): Promise<HistoryPage> {
+): Promise<HistoryView> {
   await requireAdmin();
-  if (!uuidSchema.safeParse(kursId).success) return EMPTY;
-  return historyPage(eq(auditEvents.kursId, kursId), cursor);
-}
-
-/** What happened to a person and what they did themselves. Admins only. */
-export async function personHistory(
-  profileId: string,
-  cursor?: string,
-): Promise<HistoryPage> {
-  await requireAdmin();
-  if (!uuidSchema.safeParse(profileId).success) return EMPTY;
-  return historyPage(
-    or(
-      eq(auditEvents.profileId, profileId),
-      eq(auditEvents.actorId, profileId),
-    ) as SQL,
-    cursor,
-  );
+  if (!uuidSchema.safeParse(id).success)
+    return { groups: [], nextCursor: null };
+  const page = await historyPage(SCOPE_FILTER[scope](id), cursor);
+  return {
+    groups: historyGroups(page.events, scope),
+    nextCursor: page.nextCursor,
+  };
 }

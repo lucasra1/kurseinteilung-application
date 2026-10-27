@@ -1,9 +1,9 @@
-import { ChevronDown, Lock, Pencil, Trash2, X } from "lucide-react";
+import { ChevronDown, Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { moreHistory } from "@/app/(app)/actions";
 import { removeTermin } from "@/app/(app)/kurse/actions";
 import {
   givePlaceAction,
-  moreTerminHistory,
   removeSignupAction,
 } from "@/app/(app)/termine/actions";
 import {
@@ -11,11 +11,17 @@ import {
   AddPersonSearch,
 } from "@/components/add-person-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { HistoryList, type HistoryView } from "@/components/history-list";
+import { HistoryList } from "@/components/history-list";
 import { MoveButtons } from "@/components/move-buttons";
-import { Avatar, kursLabel, StatusChip } from "@/components/termin-bits";
+import {
+  Avatar,
+  FestgeschriebenLock,
+  kursLabel,
+  StatusChip,
+} from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import { buttonVariants } from "@/components/ui/button";
+import type { HistoryView } from "@/lib/audit-text";
 import type { AdminSignupView, TerminView } from "@/lib/dal/read-model";
 import { formatDate, formatTimeRange } from "@/lib/dates";
 import {
@@ -106,18 +112,15 @@ export function AdminTerminPanel({
             {formatDate(termin.date)} · {formatTimeRange(termin)}
             {termin.location && ` · ${termin.location}`}
           </p>
-          {termin.festgeschrieben && !termin.isPast && (
-            <p className="flex items-center gap-1.5 text-sm text-zinc-700">
-              <Lock aria-hidden="true" className="size-4 shrink-0" />
-              <span>
-                <span className="font-semibold">Festgeschrieben</span>
-                {" · "}
-                {termin.festgeschriebenManuell
-                  ? "manuell"
-                  : "automatisch (weniger als 3 Monate)"}
-              </span>
-            </p>
-          )}
+          <FestgeschriebenLock
+            termin={termin}
+            variant="line"
+            detail={
+              termin.festgeschriebenManuell
+                ? "manuell"
+                : "automatisch (weniger als 3 Monate)"
+            }
+          />
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip termin={termin} />
             <Link
@@ -155,7 +158,7 @@ export function AdminTerminPanel({
             <HistoryList
               key={history.groups[0]?.actionId ?? "leer"}
               initial={history}
-              loadMore={moreTerminHistory.bind(null, termin.id)}
+              loadMore={moreHistory.bind(null, "termin", termin.id)}
             />
           </div>
         </details>
@@ -175,9 +178,9 @@ function KindSection({
   const fixed = ofKind.filter((s) => !isBackup(s.role));
   const backups = ofKind.filter((s) => isBackup(s.role));
   const total = needed(termin, kind);
-  // Missing places are held ones (ausgeschrieben) first, then plain free ones.
-  const held = ausgeschrieben(termin, kind);
-  const free = Math.max(0, termin.missing[kind] - held);
+  // Missing places are the ausgeschriebenen ones first, then plain free ones.
+  const ausgeschriebene = ausgeschrieben(termin, kind);
+  const free = Math.max(0, termin.missing[kind] - ausgeschriebene);
 
   return (
     <section className="flex flex-col gap-1.5">
@@ -197,10 +200,10 @@ function KindSection({
             isLast={signup.rank === ofKind.length}
           />
         ))}
-        {Array.from({ length: held }, (_, i) => (
+        {Array.from({ length: ausgeschriebene }, (_, i) => (
           <li
-            // biome-ignore lint/suspicious/noArrayIndexKey: one row per held place
-            key={`held-${i}`}
+            // biome-ignore lint/suspicious/noArrayIndexKey: one row per ausgeschriebenen place
+            key={`ausgeschrieben-${i}`}
             className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-brand-200 bg-brand-50 px-2.5 text-sm font-medium text-brand-700"
           >
             <span className="w-5 shrink-0 text-[13px] font-semibold">
@@ -216,7 +219,7 @@ function KindSection({
             className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
           >
             <span className="w-5 shrink-0 text-[13px] font-semibold">
-              {fixed.length + held + i + 1}
+              {fixed.length + ausgeschriebene + i + 1}
             </span>
             Freier Platz
           </li>

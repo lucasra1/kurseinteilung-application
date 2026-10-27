@@ -17,10 +17,12 @@ import {
   needed,
   placesLabel,
 } from "@/lib/staffing";
+import { placesFreedText } from "@/lib/warning-text";
 
 export type MailText = { subject: string; text: string };
 
-const SIGNATURE = "\n\nKurseinteilung";
+/** Ends every staffing mail. */
+export const SIGNATURE = "\n\nKurseinteilung";
 
 /** One Termin of the action: its main entry, then the consequences, in the action's order. */
 type Block = {
@@ -74,11 +76,7 @@ function shiftsRole(entry: AuditEntry): boolean {
   return "from" in entry.data && entry.data.from !== entry.data.to;
 }
 
-/**
- * Whether the block changed the staffing: someone's role, the order (↑/↓) or the numbers.
- * Other edits (time, place, Festschreiben) and deleting a Termin nobody was on only go
- * into the Verlauf.
- */
+/** Whether the block changed a role, the order (↑/↓) or the numbers; else Verlauf only. */
 function changesStaffing({ main, consequences }: Block): boolean {
   if ([main, ...consequences].some(shiftsRole)) return true;
   if (main.type === "signup.moved") return true;
@@ -111,10 +109,10 @@ function consequenceLine(entry: AuditEntry, actor: Actor): string {
     case "place.ausgeschrieben": {
       const { kind, places, angeschrieben } = entry.data;
       const verb = places === 1 ? "ist" : "sind";
-      const held = `– Der Termin ist festgeschrieben: ${placesLabel(places, kind)} ${verb} ausgeschrieben.`;
-      if (angeschrieben.length === 0) return held;
+      const line = `– Der Termin ist festgeschrieben: ${placesLabel(places, kind)} ${verb} ausgeschrieben.`;
+      if (angeschrieben.length === 0) return line;
       const who = angeschrieben.length === 1 ? "Backup" : "Backups";
-      return `${held} Angeschrieben: ${angeschrieben.join(", ")} (${who}).`;
+      return `${line} Angeschrieben: ${angeschrieben.join(", ")} (${who}).`;
     }
     case "place.aufruf": {
       const { angeschrieben } = entry.data;
@@ -156,7 +154,7 @@ function subject(main: AuditEntry, termin: TerminSnapshot, actor: Actor) {
  * The mail to the Praxisanleiterkoordinator:innen about one staffing action: per Termin the
  * action, its consequences as "– …" lines, the Stand afterwards and a link.
  */
-export function coordinatorMail(input: {
+export function adminMail(input: {
   actor: Actor;
   /** The action's entries in the order `staffingEvents` built them. */
   entries: AuditEntry[];
@@ -175,18 +173,24 @@ export function coordinatorMail(input: {
 
   const text = list.map((block) => {
     const now = input.after.find((s) => s.termin.id === block.terminId);
-    const lines = [
-      `„${block.termin.kursTitle} – ${block.termin.topic}“ am ${formatTerminWhen(block.termin)}`,
-      `${auditSentence(asEvent(block.main, actor))}.`,
-      ...block.consequences.map((entry) => consequenceLine(entry, actor)),
+    const paragraphs = [
+      `„${block.termin.kursTitle} – ${block.termin.topic}“ am ${formatTerminWhen(block.termin)}\n` +
+        `${auditSentence(asEvent(block.main, actor))}.`,
     ];
+    if (block.consequences.length > 0) {
+      paragraphs.push(
+        block.consequences
+          .map((entry) => consequenceLine(entry, actor))
+          .join("\n"),
+      );
+    }
     if (now) {
-      lines.push(
+      paragraphs.push(
         `Aktueller Stand: ${staffingSummary(now)}.`,
         `${input.appUrl}/termine?termin=${block.terminId}`,
       );
     }
-    return lines.join("\n");
+    return paragraphs.join("\n\n");
   });
 
   return {
@@ -195,36 +199,29 @@ export function coordinatorMail(input: {
   };
 }
 
-/** "Platz frei" to one backup of the role whose places were just ausgeschrieben. */
-export function platzFreiMail(input: {
+/** A mail to one person (`name`) about `places` of one role of a Termin. */
+export type PlaceMailInput = {
   termin: TerminSnapshot & { id: string };
   kind: Kind;
   places: number;
   name: string;
   appUrl: string;
-}): MailText {
+};
+
+/** "Platz frei" to one backup of the role whose places were just ausgeschrieben. */
+export function platzFreiMail(input: PlaceMailInput): MailText {
   const { termin, kind, places } = input;
-  const freed =
-    places === 1
-      ? `ist ein ${KIND_LABEL[kind].one}-Platz frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt den Platz.`
-      : `sind ${placesLabel(places, kind)} frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt einen davon.`;
   return {
     subject: `Platz frei: ${termin.kursTitle}, ${formatDate(termin.date)}`,
     text:
       `Hallo ${input.name},\n\n` +
-      `bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)} ${freed}\n\n` +
+      `du bist Backup bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)}. ${placesFreedText(kind, places)}\n\n` +
       `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }
 
 /** "Du wirst gebraucht" to someone qualified who isn't on a Termin lacking places without a backup. */
-export function gebrauchtMail(input: {
-  termin: TerminSnapshot & { id: string };
-  kind: Kind;
-  places: number;
-  name: string;
-  appUrl: string;
-}): MailText {
+export function gebrauchtMail(input: PlaceMailInput): MailText {
   const { termin, kind, places } = input;
   const missing =
     places === 1

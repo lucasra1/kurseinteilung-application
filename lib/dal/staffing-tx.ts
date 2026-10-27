@@ -13,15 +13,13 @@ import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import { ConfirmationRequired, DomainError } from "@/lib/errors";
 import {
-  type Gebraucht,
-  type PlatzFrei,
+  type PlaceMail,
   type StaffingChange,
   sendStaffingNotifications,
 } from "@/lib/notifications";
 import {
   type Aufruf,
   type AusschreibungPlan,
-  aufrufe,
   ausgeschrieben,
   diffRoles,
   hasQualification,
@@ -29,16 +27,16 @@ import {
   isFestgeschrieben,
   type Kind,
   needed,
+  planAufrufe,
   planAusschreibung,
   type RoleSnapshot,
   rankSignups,
+  STAFFING_FIELDS,
   sortByPosition,
   type Triggered,
   triggered,
 } from "@/lib/staffing";
 import { type Warning, warningText } from "@/lib/warning-text";
-
-export type LockedTermin = StaffingTermin;
 
 type SignupRow = {
   terminId: string;
@@ -54,7 +52,7 @@ async function loadTermine(
   tx: Tx,
   ids: string[],
   lock: boolean,
-): Promise<Map<string, LockedTermin>> {
+): Promise<Map<string, StaffingTermin>> {
   if (ids.length === 0) return new Map();
   if (lock) {
     // Lock in a single-table query: Drizzle renders `FOR UPDATE OF` schema-qualified
@@ -107,7 +105,7 @@ async function loadSignups(tx: Tx, ids: string[]): Promise<SignupRow[]> {
 }
 
 function rankedByTermin(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   rows: SignupRow[],
 ) {
   return new Map(
@@ -122,7 +120,7 @@ function rankedByTermin(
 }
 
 function states(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   ranked: ReturnType<typeof rankedByTermin>,
 ): TerminState[] {
   return [...termineById.values()].map((termin) => ({
@@ -131,10 +129,7 @@ function states(
   }));
 }
 
-/**
- * Names the Verlauf needs that may be gone after `run`: the target person if they're on
- * none of the Termine, the target Kurs if it has none.
- */
+/** The target names the Verlauf needs when no signup or Termin carries them. */
 async function targetNames(
   tx: Tx,
   action: StaffingAction,
@@ -175,8 +170,8 @@ function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
 /** `planAusschreibung` for every Termin still there after `run`. */
 function planTermine(
   action: StaffingAction,
-  before: Map<string, LockedTermin>,
-  afterRun: Map<string, LockedTermin>,
+  before: Map<string, StaffingTermin>,
+  afterRun: Map<string, StaffingTermin>,
   signupsBefore: SignupRow[],
   signupsAfter: SignupRow[],
 ): AusschreibungPlan[] {
@@ -204,12 +199,7 @@ function planTermine(
 /** Someone an Aufruf writes to. */
 type AufrufRecipient = { id: string; fullName: string; email: string };
 
-/**
- * The Aufrufe the plans trigger, each with the qualified who get "Du wirst gebraucht"
- * (see `aufrufe`); `recipients.length` is how many. Reads the profiles only if there is an
- * Aufruf. Writes nothing, so a confirmation can count the recipients before anything is
- * written.
- */
+/** The plans' Aufrufe with their recipients; writes nothing, so the Warndialog can count them. */
 async function resolveAufrufe(
   tx: Tx,
   action: StaffingAction,
@@ -244,7 +234,7 @@ async function resolveAufrufe(
         ),
       ),
     );
-  return aufrufe({
+  return planAufrufe({
     plans,
     people,
     before: signupsBefore,
@@ -256,9 +246,9 @@ async function resolveAufrufe(
 /** Writes the planned counters; returns the Termine with them. */
 async function writeCounters(
   tx: Tx,
-  afterRun: Map<string, LockedTermin>,
+  afterRun: Map<string, StaffingTermin>,
   plans: AusschreibungPlan[],
-): Promise<Map<string, LockedTermin>> {
+): Promise<Map<string, StaffingTermin>> {
   const after = new Map(afterRun);
   for (const plan of plans) {
     const termin = afterRun.get(plan.terminId);
@@ -281,21 +271,14 @@ async function writeCounters(
   return after;
 }
 
-/**
- * The Warndialog (spec 3) for an action that would trigger an Ausschreibung or an Aufruf:
- * - `false`: stop with `ConfirmationRequired` (the dialog text), nothing is written;
- * - `true`: the person confirmed; it runs on the state as it is now, whatever the dialog said;
- * - `"nie-noetig"`: the action never triggers by the rule (eintragen, übernehmen, Platz
- *   geben, ↑/↓, löschen, festschreiben). If it does anyway, that's a bug: it fails instead
- *   of sending mails nobody was warned about.
- */
+/** Whether the Warndialog was confirmed; `"nie-noetig"`: the rule never asks, so asking fails. */
 export type Bestaetigt = boolean | "nie-noetig";
 
 /** What the triggered roles would do, for the dialog text. */
 function warnings(
   triggers: Triggered[],
-  afterRun: Map<string, LockedTermin>,
-  calls: Aufruf<AufrufRecipient>[],
+  afterRun: Map<string, StaffingTermin>,
+  aufrufe: Aufruf<AufrufRecipient>[],
 ): Warning[] {
   return triggers.flatMap(({ terminId, kind, trigger }): Warning[] => {
     const termin = afterRun.get(terminId);
@@ -306,8 +289,10 @@ function warnings(
         { termin, kind, type: "backups", places: trigger.places, backups },
       ];
     }
-    const call = calls.find((c) => c.terminId === terminId && c.kind === kind);
-    const qualified = call?.recipients.length ?? 0;
+    const aufruf = aufrufe.find(
+      (a) => a.terminId === terminId && a.kind === kind,
+    );
+    const qualified = aufruf?.recipients.length ?? 0;
     return [
       { termin, kind, type: "aufruf", places: trigger.places, qualified },
     ];
@@ -330,21 +315,18 @@ function confirm(
 }
 
 /**
- * Runs a change to the signups of some Termine in one transaction: locks the Termin rows
- * first (in id order, so concurrent changes queue up instead of deadlocking), applies the
- * Ausschreibung rule (`planAusschreibung`), diffs roles before and after, writes the
- * Verlauf for `action` (see lib/audit.ts) and sends the mails built from it after the
- * commit.
+ * Runs a staffing change in one transaction, Termine locked in id order so concurrent changes
+ * queue instead of deadlocking; writes the Verlauf, sends the mails after the commit.
  */
 export async function mutateStaffing<T>(opts: {
   action: StaffingAction;
   /** See `Bestaetigt`. */
   bestaetigt: Bestaetigt;
   terminIds: (tx: Tx) => Promise<string[]>;
-  run: (tx: Tx, termine: Map<string, LockedTermin>) => Promise<T>;
+  run: (tx: Tx, termine: Map<string, StaffingTermin>) => Promise<T>;
 }): Promise<T> {
   const { action } = opts;
-  const out = await db.transaction(async (tx) => {
+  const committed = await db.transaction(async (tx) => {
     const ids = [...new Set(await opts.terminIds(tx))].sort();
     const before = await loadTermine(tx, ids, true);
     const signupsBefore = await loadSignups(tx, ids);
@@ -361,19 +343,18 @@ export async function mutateStaffing<T>(opts: {
       signupsBefore,
       signupsAfter,
     );
-    const calls = await resolveAufrufe(
+    const aufrufe = await resolveAufrufe(
       tx,
       action,
       plans,
       signupsBefore,
       signupsAfter,
     );
-    // Nothing of the rule is written yet: throwing here rolls the whole action back, without
-    // counters, Verlauf or mails.
+    // Nothing of the rule is written yet: throwing here rolls the whole action back.
     confirm(
       action,
       opts.bestaetigt,
-      warnings(triggered(plans), afterRun, calls),
+      warnings(triggered(plans), afterRun, aufrufe),
     );
     const after = await writeCounters(tx, afterRun, plans);
 
@@ -388,7 +369,7 @@ export async function mutateStaffing<T>(opts: {
       before: states(before, rankedBefore),
       after: afterStates,
       plans,
-      aufrufe: calls,
+      aufrufe,
       ...names,
     });
     await logEvents(tx, action.actor, entries);
@@ -407,7 +388,7 @@ export async function mutateStaffing<T>(opts: {
       changes,
       entries,
       plans,
-      calls,
+      aufrufe,
       afterStates,
       before,
       after,
@@ -421,65 +402,65 @@ export async function mutateStaffing<T>(opts: {
     };
   });
 
-  const enriched: StaffingChange[] = out.changes.flatMap((change) => {
+  const enriched: StaffingChange[] = committed.changes.flatMap((change) => {
     const termin =
-      out.after.get(change.terminId) ?? out.before.get(change.terminId);
-    const person = out.people.get(change.profileId);
+      committed.after.get(change.terminId) ??
+      committed.before.get(change.terminId);
+    const person = committed.people.get(change.profileId);
     if (!termin || !person) return [];
     if (isPastDate(termin.date)) return [];
-    if (!out.existingProfileIds.has(change.profileId)) return [];
+    if (!committed.existingProfileIds.has(change.profileId)) return [];
     return [{ ...change, termin, person }];
   });
 
   // The rule never triggers on past Termine, and recipients are on the Termin afterwards.
-  const platzFrei: PlatzFrei[] = triggered(out.plans).flatMap(
+  const platzFrei: PlaceMail[] = triggered(committed.plans).flatMap(
     ({ terminId, kind, trigger }) => {
-      const termin = out.after.get(terminId);
+      const termin = committed.after.get(terminId);
       if (trigger.type !== "backups" || !termin) return [];
       const recipients = trigger.recipients.flatMap((id) => {
-        const person = out.people.get(id);
+        const person = committed.people.get(id);
         return person ? [person] : [];
       });
       return [{ termin, kind, places: trigger.places, recipients }];
     },
   );
 
-  const gebraucht: Gebraucht[] = out.calls.flatMap(
-    ({ terminId, recipients, ...call }) => {
-      const termin = out.after.get(terminId);
-      return termin ? [{ termin, recipients, ...call }] : [];
+  const gebraucht: PlaceMail[] = committed.aufrufe.flatMap(
+    ({ terminId, recipients, ...aufruf }) => {
+      const termin = committed.after.get(terminId);
+      return termin ? [{ termin, recipients, ...aufruf }] : [];
     },
   );
 
   await sendStaffingNotifications({
     actor: action.actor,
-    entries: out.entries,
-    after: out.afterStates,
+    entries: committed.entries,
+    after: committed.afterStates,
     changes: enriched,
     platzFrei,
     gebraucht,
   });
-  return out.result;
+  return committed.result;
 }
 
 /** The locked Termin for `id`, or `nicht-gefunden`. */
 export function lockedTermin(
-  termineById: Map<string, LockedTermin>,
+  termineById: Map<string, StaffingTermin>,
   id: string,
-): LockedTermin {
+): StaffingTermin {
   const termin = termineById.get(id);
   if (!termin) throw new DomainError("nicht-gefunden");
   return termin;
 }
 
 /**
- * Signs a person up for `kind`: while a place of the kind is ausgeschrieben they take it
- * (first come, first served), otherwise they go to the end of the list, on a free fixed
- * place or as a backup. Call only inside `mutateStaffing.run`.
+ * Signs a person up for `kind`: onto an ausgeschriebenen place while there is one, else at
+ * the end. Call only inside `mutateStaffing.run`.
  */
 export async function appendSignup(
   tx: Tx,
-  termin: LockedTermin,
+  termin: StaffingTermin,
   profileId: string,
   kind: Kind,
 ): Promise<void> {
@@ -511,7 +492,7 @@ export async function appendSignup(
     .insert(signups)
     .values({ terminId: termin.id, profileId, kind, position: nextPosition });
   if (ausgeschrieben(termin, kind) > 0) {
-    await takeHeldPlace(tx, termin, profileId, kind);
+    await takeAusgeschriebenPlace(tx, termin, profileId, kind);
   }
 }
 
@@ -530,14 +511,10 @@ async function signupsInOrder(tx: Tx, terminId: string) {
   );
 }
 
-/**
- * Moves a signed-up person to the first backup slot of `kind` (before every other backup),
- * renumbers the Termin's positions and lowers the counter by one: they now hold the place.
- * `termin` is the locked state, with a place of `kind` ausgeschrieben.
- */
-async function takeHeldPlace(
+/** Puts a signed-up person ahead of the backups of `kind` and lowers its counter by one. */
+async function takeAusgeschriebenPlace(
   tx: Tx,
-  termin: LockedTermin,
+  termin: StaffingTermin,
   profileId: string,
   kind: Kind,
 ): Promise<void> {
@@ -559,29 +536,20 @@ async function takeHeldPlace(
       .set({ position: index + 1 })
       .where(eq(signups.id, row.id));
   }
+  const counter = STAFFING_FIELDS[kind].ausgeschrieben;
   await tx
     .update(termine)
-    .set(
-      kind === "instruktor"
-        ? {
-            instruktorenAusgeschrieben: sql`${termine.instruktorenAusgeschrieben} - 1`,
-          }
-        : {
-            praxisanleiterAusgeschrieben: sql`${termine.praxisanleiterAusgeschrieben} - 1`,
-          },
-    )
+    .set({ [counter]: sql`${termine[counter]} - 1` })
     .where(eq(termine.id, termin.id));
 }
 
 /**
- * Gives a backup an ausgeschriebenen place of their role (Platz übernehmen, Platz geben):
- * `platz-vergeben` once none is left, `kein-backup` if the person isn't a backup here. The
- * Termin lock of `mutateStaffing` queues concurrent claims, so exactly one wins. Call only
- * inside `mutateStaffing.run`, with the action's target as the person.
+ * Gives a backup an ausgeschriebenen place (übernehmen, Platz geben); the Termin lock lets
+ * exactly one of concurrent claims win. Call only inside `mutateStaffing.run`.
  */
-export async function claimHeldPlace(
+export async function claimAusgeschriebenPlace(
   tx: Tx,
-  termin: LockedTermin,
+  termin: StaffingTermin,
   profileId: string,
 ): Promise<void> {
   const ranked = rankSignups(await signupsInOrder(tx, termin.id), termin);
@@ -591,7 +559,7 @@ export async function claimHeldPlace(
     throw new DomainError("platz-vergeben");
   }
   if (!isBackup(signup.role)) throw new DomainError("kein-backup");
-  await takeHeldPlace(tx, termin, profileId, signup.kind);
+  await takeAusgeschriebenPlace(tx, termin, profileId, signup.kind);
 }
 
 /** Removes a person and moves everyone behind them up. Call only inside `mutateStaffing.run`. */

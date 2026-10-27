@@ -2,18 +2,20 @@
 // Aufruf (spec 3). Pure.
 import type { TerminSnapshot } from "@/lib/audit";
 import { qualifiedCount, terminText } from "@/lib/audit-text";
-import { isBackup, type Kind, placesLabel, type Role } from "@/lib/staffing";
+import {
+  isBackup,
+  KIND_LABEL,
+  type Kind,
+  placesLabel,
+  type Role,
+} from "@/lib/staffing";
 
 type WarnedTermin = Pick<
   TerminSnapshot,
   "kursTitle" | "topic" | "date" | "startTime"
 > & { id: string };
 
-/**
- * What an action would trigger for one role of a Termin: `places` get ausgeschrieben and
- * `backups` of the role get "Platz frei", or, without a backup, `places` go missing and
- * `qualified` get "Du wirst gebraucht" (unknown in the UI, which doesn't count them).
- */
+/** What an action would trigger for one role; `qualified` is unknown in the UI. */
 export type Warning = { termin: WarnedTermin; kind: Kind; places: number } & (
   | { type: "backups"; backups: number }
   | { type: "aufruf"; qualified?: number }
@@ -38,11 +40,7 @@ function roleText(warning: Warning): string {
   return `${missing} Es gibt kein Backup: ${qualifiedCount(qualified)} ${qualified === 1 ? "bekommt" : "bekommen"} eine E-Mail.`;
 }
 
-/**
- * The dialog text: one line per Termin, in date order, e.g. "Der Termin „…“ am … ist
- * festgeschrieben. Dadurch wird 1 Instruktor-Platz ausgeschrieben. 2 Backups bekommen
- * eine E-Mail."
- */
+/** The Warndialog text: one line per Termin, in date order. */
 export function warningText(warnings: Warning[]): string {
   const byTermin = new Map<string, Warning[]>();
   for (const warning of warnings) {
@@ -64,17 +62,20 @@ export function warningText(warnings: Warning[]): string {
     .join("\n");
 }
 
+/** "Ein Instruktor-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn." */
+export function placesFreedText(kind: Kind, places: number): string {
+  return places === 1
+    ? `Ein ${KIND_LABEL[kind].one}-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.`
+    : `${placesLabel(places, kind)} sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.`;
+}
+
 type ViewedTermin = WarnedTermin & {
   festgeschrieben: boolean;
   isPast: boolean;
   signups: { profileId: string; kind: Kind; role: Role }[];
 };
 
-/**
- * What withdrawing triggers when the viewer holds a fixed place on a festgeschriebenen,
- * upcoming Termin, worded like the server's dialog; undefined if it triggers nothing. The
- * Austragen dialog shows it right away and sends `bestaetigt=1`.
- */
+/** The Warndialog text for withdrawing from the viewer's fixed place, if it triggers anything. */
 export function selfWithdrawWarning(
   termin: ViewedTermin,
   viewerId: string,

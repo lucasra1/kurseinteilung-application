@@ -1,23 +1,32 @@
 import "server-only";
 import { eq, inArray, or } from "drizzle-orm";
-import type { Actor, AuditEntry, TerminState } from "@/lib/audit";
-import type { LockedTermin } from "@/lib/dal/staffing-tx";
+import type {
+  Actor,
+  AuditEntry,
+  StaffingTermin,
+  TerminState,
+} from "@/lib/audit";
 import { formatDate, formatTerminWhen, todayInVienna } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { type EmailMessage, sendEmails } from "@/lib/email";
 import { env } from "@/lib/env";
-import { coordinatorMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
+import {
+  adminMail,
+  gebrauchtMail,
+  type MailText,
+  type PlaceMailInput,
+  platzFreiMail,
+  SIGNATURE,
+} from "@/lib/mail-text";
 import { type Kind, ROLE_LABEL, type RoleChange } from "@/lib/staffing";
 
 export type StaffingChange = RoleChange & {
-  termin: LockedTermin;
+  termin: StaffingTermin;
   person: { fullName: string; email: string };
 };
 
-const SIGNATURE = "\n\nKurseinteilung";
-
-function describe(termin: LockedTermin) {
+function describe(termin: StaffingTermin) {
   return {
     what: `„${termin.kursTitle} – ${termin.topic}“`,
     when: formatTerminWhen(termin),
@@ -52,36 +61,14 @@ function personEmail(change: StaffingChange): EmailMessage {
   };
 }
 
-async function adminEmails(excludeProfileId: string): Promise<string[]> {
-  const admins = await db
-    .select({ id: profiles.id, email: profiles.email })
-    .from(profiles)
-    .where(
-      env.ADMIN_EMAILS.length > 0
-        ? or(
-            eq(profiles.isAdmin, true),
-            inArray(profiles.email, env.ADMIN_EMAILS),
-          )
-        : eq(profiles.isAdmin, true),
-    );
-  return admins.filter((a) => a.id !== excludeProfileId).map((a) => a.email);
-}
-
-/** Places of one role the action ausgeschrieben, and the backups to offer them to. */
-export type PlatzFrei = {
-  termin: LockedTermin;
+/**
+ * Places of one role and whom to write about them, without the actor: the backups
+ * ("Platz frei"), or without a backup the qualified not on the Termin ("Du wirst gebraucht").
+ */
+export type PlaceMail = {
+  termin: StaffingTermin;
   kind: Kind;
   places: number;
-  /** Without the actor. */
-  recipients: { fullName: string; email: string }[];
-};
-
-/** A role lacking places without a backup, and the qualified to call ("Du wirst gebraucht"). */
-export type Gebraucht = {
-  termin: LockedTermin;
-  kind: Kind;
-  places: number;
-  /** Qualified, on the Termin in no role, without the actor. */
   recipients: { fullName: string; email: string }[];
 };
 
@@ -94,32 +81,19 @@ export type StaffingOutcome = {
   after: TerminState[];
   /** Role changes of people who still have an account, on Termine that aren't past. */
   changes: StaffingChange[];
-  platzFrei: PlatzFrei[];
-  gebraucht: Gebraucht[];
+  platzFrei: PlaceMail[];
+  gebraucht: PlaceMail[];
 };
 
-/** "Platz frei" to the backups of every role whose places the action ausgeschrieben. */
-async function platzFreiEmails(outcome: StaffingOutcome) {
-  return outcome.platzFrei.flatMap(({ termin, kind, places, recipients }) =>
+/** One mail per recipient of each `PlaceMail`, worded by `text`. */
+function placeEmails(
+  list: PlaceMail[],
+  text: (input: PlaceMailInput) => MailText,
+): EmailMessage[] {
+  return list.flatMap(({ termin, kind, places, recipients }) =>
     recipients.map((person) => ({
       to: person.email,
-      ...platzFreiMail({
-        termin,
-        kind,
-        places,
-        name: person.fullName,
-        appUrl: env.APP_URL,
-      }),
-    })),
-  );
-}
-
-/** "Du wirst gebraucht" to the qualified for every role lacking places without a backup. */
-async function gebrauchtEmails(outcome: StaffingOutcome) {
-  return outcome.gebraucht.flatMap(({ termin, kind, places, recipients }) =>
-    recipients.map((person) => ({
-      to: person.email,
-      ...gebrauchtMail({
+      ...text({
         termin,
         kind,
         places,
@@ -137,9 +111,9 @@ async function betroffeneEmails(outcome: StaffingOutcome) {
     .map(personEmail);
 }
 
-/** One mail about the whole action to every Praxisanleiterkoordinator:in but the actor. */
-async function koordinationEmails(outcome: StaffingOutcome) {
-  const mail = coordinatorMail({
+/** One mail about the whole action to every admin but the actor. */
+async function adminEmails(outcome: StaffingOutcome) {
+  const mail = adminMail({
     actor: outcome.actor,
     entries: outcome.entries,
     after: outcome.after,
@@ -147,8 +121,20 @@ async function koordinationEmails(outcome: StaffingOutcome) {
     appUrl: env.APP_URL,
   });
   if (!mail) return [];
-  const recipients = await adminEmails(outcome.actor.id);
-  return recipients.map((to) => ({ to, ...mail }));
+  const admins = await db
+    .select({ id: profiles.id, email: profiles.email })
+    .from(profiles)
+    .where(
+      env.ADMIN_EMAILS.length > 0
+        ? or(
+            eq(profiles.isAdmin, true),
+            inArray(profiles.email, env.ADMIN_EMAILS),
+          )
+        : eq(profiles.isAdmin, true),
+    );
+  return admins
+    .filter((admin) => admin.id !== outcome.actor.id)
+    .map((admin) => ({ to: admin.email, ...mail }));
 }
 
 type MailGroup = {
@@ -161,10 +147,16 @@ type MailGroup = {
  * more urgent ones are out already (spec 4, Kontingent).
  */
 const MAIL_GROUPS: MailGroup[] = [
-  { name: "platz-frei", build: platzFreiEmails },
-  { name: "gebraucht", build: gebrauchtEmails },
+  {
+    name: "platz-frei",
+    build: async (outcome) => placeEmails(outcome.platzFrei, platzFreiMail),
+  },
+  {
+    name: "gebraucht",
+    build: async (outcome) => placeEmails(outcome.gebraucht, gebrauchtMail),
+  },
   { name: "betroffene", build: betroffeneEmails },
-  { name: "koordination", build: koordinationEmails },
+  { name: "admins", build: adminEmails },
 ];
 
 /**

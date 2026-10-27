@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  aufrufe,
   canClaimPlace,
-  festschreibungMessage,
   isFestgeschrieben,
   type Kind,
   missingPlaces,
   needsViewer,
   nextRole,
+  planAufrufe,
   planAusschreibung,
   type RolePlan,
   rankSignups,
@@ -81,7 +80,7 @@ describe("rankSignups", () => {
     });
   });
 
-  it("holds ausgeschriebene places back: only the first N − A are fixed", () => {
+  it("keeps ausgeschriebene places free: only the first N − A are fixed", () => {
     expect(
       roles(rankSignups(inOrder("anna", "ben", "clara"), staffing(2, 1))),
     ).toEqual({
@@ -99,7 +98,7 @@ describe("rankSignups", () => {
     });
   });
 
-  it("labels a Termin with a held place as missing someone, though enough are signed up", () => {
+  it("labels a Termin with an ausgeschriebenen place as missing someone, though enough are signed up", () => {
     // Status chip, "Braucht Leute" and the stat cards all read `missingPlaces`.
     const s = staffing(2, 1);
     const ranked = rankSignups(inOrder("anna", "ben"), s);
@@ -115,16 +114,16 @@ describe("rankSignups", () => {
 });
 
 describe("canClaimPlace", () => {
-  /** A Termin with 1 Instruktor and 1 Praxisanleiter needed; `held` places ausgeschrieben per kind. */
+  /** A Termin with 1 Instruktor and 1 Praxisanleiter needed; places ausgeschrieben per kind. */
   function termin(
-    held: { instruktor?: number; praxisanleiter?: number },
+    ausgeschrieben: { instruktor?: number; praxisanleiter?: number },
     ...people: Array<string | [string, Kind]>
   ) {
     const s: Staffing = {
       instruktorenNeeded: 1,
       praxisanleiterNeeded: 1,
-      instruktorenAusgeschrieben: held.instruktor ?? 0,
-      praxisanleiterAusgeschrieben: held.praxisanleiter ?? 0,
+      instruktorenAusgeschrieben: ausgeschrieben.instruktor ?? 0,
+      praxisanleiterAusgeschrieben: ausgeschrieben.praxisanleiter ?? 0,
     };
     return { ...s, signups: rankSignups(inOrder(...people), s) };
   }
@@ -195,12 +194,12 @@ describe("needsViewer (Wo du gebraucht wirst)", () => {
   });
 
   it("shows a Termin where the viewer is a backup of a role with an ausgeschriebenen place", () => {
-    const held = termin(
+    const claimable = termin(
       { instruktorenNeeded: 1, instruktorenAusgeschrieben: 1 },
       "ben",
       "dora",
     );
-    expect(needsViewer(held, instruktor)).toBe(true);
+    expect(needsViewer(claimable, instruktor)).toBe(true);
     expect(
       needsViewer(termin({ instruktorenNeeded: 1 }, "ben", "dora"), instruktor),
     ).toBe(false);
@@ -253,43 +252,8 @@ describe("isFestgeschrieben", () => {
   });
 });
 
-describe("festschreibungMessage", () => {
-  it("counts the Termine that were festgeschrieben", () => {
-    expect(festschreibungMessage(true, { changed: 1, automatisch: 0 })).toBe(
-      "1 Termin festgeschrieben.",
-    );
-    expect(festschreibungMessage(true, { changed: 3, automatisch: 0 })).toBe(
-      "3 Termine festgeschrieben.",
-    );
-  });
-
-  it("points out Termine that stay automatically festgeschrieben after Aufheben", () => {
-    expect(festschreibungMessage(false, { changed: 3, automatisch: 0 })).toBe(
-      "Festschreibung bei 3 Terminen aufgehoben.",
-    );
-    expect(festschreibungMessage(false, { changed: 1, automatisch: 1 })).toBe(
-      "Festschreibung bei 1 Termin aufgehoben. 1 Termin bleibt automatisch festgeschrieben (weniger als 3 Monate).",
-    );
-    expect(festschreibungMessage(false, { changed: 3, automatisch: 2 })).toBe(
-      "Festschreibung bei 3 Terminen aufgehoben. 2 Termine bleiben automatisch festgeschrieben (weniger als 3 Monate).",
-    );
-  });
-
-  it("says when nothing changed", () => {
-    expect(festschreibungMessage(true, { changed: 0, automatisch: 0 })).toBe(
-      "Die Auswahl war schon festgeschrieben.",
-    );
-    expect(festschreibungMessage(false, { changed: 0, automatisch: 0 })).toBe(
-      "In der Auswahl war nichts manuell festgeschrieben.",
-    );
-    expect(festschreibungMessage(false, { changed: 0, automatisch: 2 })).toBe(
-      "In der Auswahl war nichts manuell festgeschrieben. 2 Termine bleiben automatisch festgeschrieben (weniger als 3 Monate).",
-    );
-  });
-});
-
 describe("planAusschreibung", () => {
-  it("holds a place freed by a withdrawal for the backups and writes to all of them but the actor", () => {
+  it("makes a place freed by a withdrawal ausgeschrieben and writes to every backup but the actor", () => {
     expect(
       instruktorPlan(
         {
@@ -324,7 +288,7 @@ describe("planAusschreibung", () => {
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "none" } });
   });
 
-  it("releases every held place once the Termin is no longer festgeschrieben (Aufheben)", () => {
+  it("releases every ausgeschriebenen place once the Termin is no longer festgeschrieben (Aufheben)", () => {
     const signups = inOrder("anna", "clara", "dora");
     expect(
       instruktorPlan(
@@ -345,7 +309,7 @@ describe("planAusschreibung", () => {
     ).toEqual({ ausgeschrieben: 1, trigger: { type: "none" } });
   });
 
-  it("holds a place added by a higher number for the backups (N 2 → 3)", () => {
+  it("makes a place added by a higher number ausgeschrieben (N 2 → 3)", () => {
     const signups = inOrder("anna", "ben", "clara");
     expect(
       instruktorPlan(
@@ -358,7 +322,41 @@ describe("planAusschreibung", () => {
     });
   });
 
-  it("calls the qualified when a higher number finds no backup", () => {
+  it("keeps the only backup a backup when the number rises by more than one (N 2 → 4)", () => {
+    const signups = inOrder("anna", "ben", "clara");
+    const plan = instruktorPlan(
+      { staffing: staffing(2), signups },
+      { staffing: staffing(4), signups },
+    );
+    expect(plan).toEqual({
+      ausgeschrieben: 2,
+      trigger: { type: "backups", places: 2, recipients: ["clara"] },
+    });
+    expect(
+      roles(rankSignups(signups, staffing(4, plan.ausgeschrieben))),
+    ).toEqual({
+      anna: "instruktor",
+      ben: "instruktor",
+      clara: "backup-instruktor",
+    });
+  });
+
+  it("keeps the backup a backup when the number rises with a place already ausgeschrieben (N 2 → 4, A 1)", () => {
+    const signups = inOrder("anna", "clara");
+    const plan = instruktorPlan(
+      { staffing: staffing(2, 1), signups },
+      { staffing: staffing(4, 1), signups },
+    );
+    expect(plan).toEqual({
+      ausgeschrieben: 3,
+      trigger: { type: "backups", places: 2, recipients: ["clara"] },
+    });
+    expect(
+      roles(rankSignups(signups, staffing(4, plan.ausgeschrieben))),
+    ).toEqual({ anna: "instruktor", clara: "backup-instruktor" });
+  });
+
+  it("starts an Aufruf when a higher number finds no backup", () => {
     const signups = inOrder("anna", "ben");
     expect(
       instruktorPlan(
@@ -368,7 +366,17 @@ describe("planAusschreibung", () => {
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "aufruf", places: 1 } });
   });
 
-  it("calls the qualified when a fixed person leaves and there is no backup", () => {
+  it("starts an Aufruf and keeps the counter when a higher number finds no backup (N 2 → 4, A 1)", () => {
+    const signups = inOrder("anna");
+    expect(
+      instruktorPlan(
+        { staffing: staffing(2, 1), signups },
+        { staffing: staffing(4, 1), signups },
+      ),
+    ).toEqual({ ausgeschrieben: 1, trigger: { type: "aufruf", places: 2 } });
+  });
+
+  it("starts an Aufruf when a fixed person leaves and there is no backup", () => {
     expect(
       instruktorPlan(
         { staffing: staffing(2), signups: inOrder("anna", "ben") },
@@ -378,7 +386,7 @@ describe("planAusschreibung", () => {
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "aufruf", places: 1 } });
   });
 
-  it("keeps the counter when it calls the qualified (N 3, A 1, a fixed one leaves)", () => {
+  it("keeps the counter on an Aufruf (N 3, A 1, a fixed one leaves)", () => {
     expect(
       instruktorPlan(
         { staffing: staffing(3, 1), signups: inOrder("anna", "ben") },
@@ -482,7 +490,7 @@ describe("planAusschreibung never triggers on", () => {
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "none" } });
   });
 
-  it("signing up for a role with a held place: the newcomer takes it", () => {
+  it("signing up for a role with an ausgeschriebenen place: the newcomer takes it", () => {
     // appendSignup put Dora at the first backup slot and lowered the counter.
     expect(
       instruktorPlan(
@@ -510,7 +518,7 @@ describe("planAusschreibung never triggers on", () => {
     ).toEqual({ ausgeschrieben: 0, trigger: { type: "none" } });
   });
 
-  it("a lower number without held places: the last fixed person becomes backup", () => {
+  it("a lower number without ausgeschriebenen places: the last fixed person becomes backup", () => {
     const signups = inOrder("anna", "ben");
     expect(
       instruktorPlan(
@@ -521,7 +529,7 @@ describe("planAusschreibung never triggers on", () => {
   });
 });
 
-describe("aufrufe", () => {
+describe("planAufrufe", () => {
   /** Everyone with an account: id and qualifications. */
   const PEOPLE = [
     { id: "lea", isInstruktor: false, isPraxisanleiter: false },
@@ -546,7 +554,7 @@ describe("aufrufe", () => {
     });
     const onT1 = (side: Side) =>
       side.signups.map((s) => ({ terminId: "t1", profileId: s.profileId }));
-    return aufrufe({
+    return planAufrufe({
       plans: [plan],
       people: PEOPLE,
       before: onT1(before),
@@ -558,7 +566,7 @@ describe("aufrufe", () => {
     }));
   }
 
-  it("calls everyone qualified for the role who is on the Termin in no role, without the actor", () => {
+  it("writes to everyone qualified for the role who is on the Termin in no role, without the actor", () => {
     expect(
       called(
         {
@@ -581,7 +589,7 @@ describe("aufrufe", () => {
     ]);
   });
 
-  it("calls nobody when the role has a backup: the backups get Platz frei", () => {
+  it("starts no Aufruf when the role has a backup: the backups get Platz frei", () => {
     expect(
       called(
         { staffing: staffing(2), signups: inOrder("anna", "ben", "clara") },
@@ -591,7 +599,7 @@ describe("aufrufe", () => {
     ).toEqual([]);
   });
 
-  it("calls the qualified when a higher number finds no backup", () => {
+  it("starts an Aufruf when a higher number finds no backup", () => {
     const signups = inOrder("anna", "ben");
     expect(
       called(
@@ -609,7 +617,7 @@ describe("aufrufe", () => {
     ]);
   });
 
-  it("calls nobody when the last backup withdraws while a place is ausgeschrieben", () => {
+  it("starts no Aufruf when the last backup withdraws while a place is ausgeschrieben", () => {
     expect(
       called(
         { staffing: staffing(2, 1), signups: inOrder("anna", "ben") },
@@ -619,7 +627,7 @@ describe("aufrufe", () => {
     ).toEqual([]);
   });
 
-  it("doesn't call back whoever a coordinator just took off the Termin", () => {
+  it("leaves out whoever an admin just took off the Termin", () => {
     expect(
       called(
         { staffing: staffing(2), signups: inOrder("anna", "ben") },

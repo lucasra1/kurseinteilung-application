@@ -13,14 +13,13 @@ import { EmptyState } from "@/components/empty-state";
 import { FilterChips } from "@/components/filter-chips";
 import {
   AvatarSlots,
-  FestgeschriebenChip,
+  FestgeschriebenLock,
   kursLabel,
   StatusChip,
 } from "@/components/termin-bits";
 import { buttonVariants } from "@/components/ui/button";
 import { WithPanel } from "@/components/with-panel";
-import { historyGroups } from "@/lib/audit-text";
-import { terminHistory } from "@/lib/dal/audit";
+import { getHistory } from "@/lib/dal/audit";
 import { listPeople } from "@/lib/dal/profiles";
 import {
   type AdminSignupView,
@@ -34,7 +33,7 @@ import {
   formatWeekday,
   groupByMonth,
 } from "@/lib/dates";
-import { isBackup, KIND_LABEL, type Kind } from "@/lib/staffing";
+import { isBackup, KIND_LABEL, type Kind, needed } from "@/lib/staffing";
 import { hrefWith } from "@/lib/url";
 import { cn } from "@/lib/utils";
 import { FestschreibungForm } from "./festschreibung-form";
@@ -122,7 +121,7 @@ export async function AdminView({
     ? await Promise.all([
         all.find((t) => t.id === query.termin) ?? findAdminTermin(query.termin),
         listPeople(),
-        terminHistory(query.termin),
+        getHistory("termin", query.termin),
       ])
     : [null, [], null];
 
@@ -145,10 +144,7 @@ export async function AdminView({
             key={selected.id}
             termin={selected}
             people={people}
-            history={{
-              groups: historyGroups(history.events),
-              nextCursor: history.nextCursor,
-            }}
+            history={history}
             closeHref={href({})}
           />
         )
@@ -459,7 +455,7 @@ function AdminTerminRowContent({
             {formatTimeRange(termin)}
             {termin.location && ` · ${termin.location}`}
           </span>
-          <FestgeschriebenChip termin={termin} />
+          <FestgeschriebenLock termin={termin} />
         </span>
       </span>
       <span className="col-start-2 flex flex-wrap items-center gap-3 @4xl:contents">
@@ -496,10 +492,7 @@ function KindSlots({
   termin: TerminView<AdminSignupView>;
   kind: Kind;
 }) {
-  const total =
-    kind === "instruktor"
-      ? termin.instruktorenNeeded
-      : termin.praxisanleiterNeeded;
+  const total = needed(termin, kind);
   if (total === 0) {
     return (
       <span

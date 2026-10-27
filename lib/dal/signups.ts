@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { requireAdmin, requireUser } from "@/lib/dal/auth";
 import {
   appendSignup,
-  claimHeldPlace,
+  claimAusgeschriebenPlace,
   lockedTermin,
   mutateStaffing,
   removeSignup,
@@ -68,7 +68,7 @@ export async function claimPlace(terminId: string): Promise<void> {
     run: async (tx, termine) => {
       const termin = lockedTermin(termine, terminId);
       if (isPastDate(termin.date)) throw new DomainError("termin-vorbei");
-      await claimHeldPlace(tx, termin, user.id);
+      await claimAusgeschriebenPlace(tx, termin, user.id);
     },
   });
 }
@@ -122,7 +122,7 @@ export async function adminRemoveSignup(
 }
 
 /**
- * "Platz geben": a coordinator gives a backup an ausgeschriebenen place of their role, with
+ * "Platz geben": an admin gives a backup an ausgeschriebenen place of their role, with
  * the same result as Platz übernehmen.
  */
 export async function adminGivePlace(
@@ -139,7 +139,11 @@ export async function adminGivePlace(
     bestaetigt: "nie-noetig",
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
-      await claimHeldPlace(tx, lockedTermin(termine, terminId), profileId);
+      await claimAusgeschriebenPlace(
+        tx,
+        lockedTermin(termine, terminId),
+        profileId,
+      );
     },
   });
 }

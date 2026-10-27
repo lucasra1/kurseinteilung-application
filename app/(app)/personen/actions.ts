@@ -1,13 +1,10 @@
 "use server";
 
 import { z } from "zod";
-import type { HistoryView } from "@/components/history-list";
 import { type ActionResult, runAction } from "@/lib/action-result";
-import { historyGroups } from "@/lib/audit-text";
-import { personHistory } from "@/lib/dal/audit";
 import { removePerson, setAdmin, setQualification } from "@/lib/dal/profiles";
 import { regenerateInviteToken } from "@/lib/dal/settings";
-import { isBestaetigt, kindSchema, uuidSchema } from "@/lib/validation";
+import { bestaetigtSchema, kindSchema, uuidSchema } from "@/lib/validation";
 
 export async function toggleAdmin(
   _prev: ActionResult,
@@ -42,27 +39,12 @@ export async function deletePerson(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { profileId } = z
-      .object({ profileId: uuidSchema })
+    const { profileId, bestaetigt } = z
+      .object({ profileId: uuidSchema, bestaetigt: bestaetigtSchema })
       .parse(Object.fromEntries(formData));
-    await removePerson(profileId, isBestaetigt(formData));
+    await removePerson(profileId, bestaetigt);
     return "Person entfernt.";
   });
-}
-
-/** Older Verlauf entries of a person for "Mehr anzeigen"; admins only (via personHistory). */
-export async function morePersonHistory(
-  profileId: string,
-  cursor: string,
-): Promise<HistoryView> {
-  const page = await personHistory(
-    uuidSchema.parse(profileId),
-    z.iso.datetime().parse(cursor),
-  );
-  return {
-    groups: historyGroups(page.events, "person"),
-    nextCursor: page.nextCursor,
-  };
 }
 
 export async function newInviteLink(

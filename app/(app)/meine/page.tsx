@@ -7,7 +7,7 @@ import { SkeletonList } from "@/components/skeleton-list";
 import {
   Avatar,
   CLAIM_LABEL,
-  FestgeschriebenChip,
+  FestgeschriebenLock,
   kursLabel,
   RoleChip,
 } from "@/components/termin-bits";
@@ -162,7 +162,7 @@ function NextTermin({
       <div className="flex items-center justify-between gap-3">
         <span className="flex flex-wrap items-center gap-2">
           <RoleChip role={me.role} prefix="" />
-          <FestgeschriebenChip termin={termin} />
+          <FestgeschriebenLock termin={termin} />
         </span>
         <span className="text-[13px] font-medium text-muted-foreground">
           {formatDaysUntil(termin.date)}

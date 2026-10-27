@@ -1,11 +1,15 @@
-import { CalendarDays, Clock, Lock, MapPin, Plus } from "lucide-react";
+import { CalendarDays, Clock, MapPin, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   SignupCta,
   type SignupCtaProps,
   type SignupOption,
 } from "@/components/signup-cta";
-import { Avatar, kursLabel } from "@/components/termin-bits";
+import {
+  Avatar,
+  FestgeschriebenLock,
+  kursLabel,
+} from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import type { SignupView, TerminView } from "@/lib/dal/read-model";
 import { formatLongDate, formatTimeRange } from "@/lib/dates";
@@ -21,12 +25,11 @@ import {
   kindOf,
   needed,
   nextRole,
-  placesLabel,
   type Qualifications,
   ROLE_LABEL,
 } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
-import { selfWithdrawWarning } from "@/lib/warning-text";
+import { placesFreedText, selfWithdrawWarning } from "@/lib/warning-text";
 
 type Viewer = Qualifications & { id: string };
 
@@ -51,16 +54,18 @@ export function TrainerTerminPanel({
       footer={<SignupCta {...cta(termin, viewer, mine, options)} />}
     >
       <div className="flex flex-col gap-5">
-        <ul className="flex flex-col gap-2.5 text-[15px]">
-          <MetaLine icon={CalendarDays}>{formatLongDate(termin.date)}</MetaLine>
-          <MetaLine icon={Clock}>{formatTimeRange(termin)} Uhr</MetaLine>
-          {termin.location && (
-            <MetaLine icon={MapPin}>{termin.location}</MetaLine>
-          )}
-          {termin.festgeschrieben && !termin.isPast && (
-            <MetaLine icon={Lock}>Festgeschrieben</MetaLine>
-          )}
-        </ul>
+        <div className="flex flex-col gap-2.5">
+          <ul className="flex flex-col gap-2.5 text-[15px]">
+            <MetaLine icon={CalendarDays}>
+              {formatLongDate(termin.date)}
+            </MetaLine>
+            <MetaLine icon={Clock}>{formatTimeRange(termin)} Uhr</MetaLine>
+            {termin.location && (
+              <MetaLine icon={MapPin}>{termin.location}</MetaLine>
+            )}
+          </ul>
+          <FestgeschriebenLock termin={termin} variant="line" />
+        </div>
         {termin.kursDescription && (
           <p className="text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
             {termin.kursDescription}
@@ -115,20 +120,20 @@ function cta(
     };
   }
   if (mine) {
-    const held = ausgeschrieben(termin, mine.kind);
     if (canClaimPlace(termin, mine.profileId)) {
       return {
         terminId,
         mode: "uebernehmen",
-        hint:
-          held === 1
-            ? `Ein ${KIND_LABEL[mine.kind].one}-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.`
-            : `${placesLabel(held, mine.kind)} sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.`,
+        hint: placesFreedText(mine.kind, ausgeschrieben(termin, mine.kind)),
       };
     }
     const many = KIND_LABEL[mine.kind].many;
     if (isBackup(mine.role)) {
-      const hint = `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`;
+      const backup = `Du bist Backup ${mine.rank - fixedPlaces(termin, mine.kind)} bei den ${many}`;
+      // On a festgeschriebenen Termin nobody moves up: a freed place is ausgeschrieben.
+      const hint = termin.festgeschrieben
+        ? `${backup}. Wird ein Platz frei, bekommst du eine E-Mail und kannst ihn übernehmen.`
+        : `${backup} und rückst nach, wenn jemand ausfällt.`;
       return { terminId, mode: "austragen", hint };
     }
     // Only a fixed place on a festgeschriebenen Termin triggers an Ausschreibung.
@@ -169,7 +174,9 @@ function optionHint(termin: TerminView, options: SignupOption[]): string {
   const { kind, primary } = options[0];
   const { one, many } = KIND_LABEL[kind];
   if (!primary) {
-    return `Alle ${many}-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt.`;
+    return termin.festgeschrieben
+      ? `Alle ${many}-Plätze sind vergeben. Als Backup bekommst du eine E-Mail, wenn ein Platz frei wird, und kannst ihn übernehmen.`
+      : `Alle ${many}-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt.`;
   }
   const free = termin.missing[kind];
   return free === 1

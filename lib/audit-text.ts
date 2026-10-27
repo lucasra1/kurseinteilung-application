@@ -17,7 +17,7 @@ import {
   placesLabel,
   type Role,
 } from "@/lib/staffing";
-import { COORDINATOR } from "@/lib/wording";
+import { COORDINATOR, countOf } from "@/lib/wording";
 
 /** "Instruktor", "Backup Praxisanleiter" */
 function roleText(role: Role): string {
@@ -121,10 +121,10 @@ export function auditSentence(event: AuditEvent): string {
     }
     case "place.ausgeschrieben": {
       const { kind, places, angeschrieben } = event.data;
-      const held = `${placesLabel(places, kind)} ausgeschrieben`;
+      const text = `${placesLabel(places, kind)} ausgeschrieben`;
       return angeschrieben.length > 0
-        ? `${held}, angeschrieben: ${angeschrieben.join(", ")}`
-        : held;
+        ? `${text}, angeschrieben: ${angeschrieben.join(", ")}`
+        : text;
     }
     case "place.aufruf": {
       const { kind, places, angeschrieben } = event.data;
@@ -179,7 +179,7 @@ export function auditSentence(event: AuditEvent): string {
 
 /** "14 Qualifizierte", "1 qualifizierte Person" */
 export function qualifiedCount(n: number): string {
-  return n === 1 ? "1 qualifizierte Person" : `${n} Qualifizierte`;
+  return countOf(n, { one: "qualifizierte Person", many: "Qualifizierte" });
 }
 
 const EXCERPT_LENGTH = 50;
@@ -241,7 +241,12 @@ export type HistoryGroup = {
 };
 
 /** Where a Verlauf is shown: a Termin's panel, a Kurs page, or a person's sheet. */
-export type HistoryScope = "termin" | "kurs" | "person";
+export const HISTORY_SCOPES = ["termin", "kurs", "person"] as const;
+
+export type HistoryScope = (typeof HISTORY_SCOPES)[number];
+
+/** One page of a Verlauf; `nextCursor` loads the older entries, null if there are none. */
+export type HistoryView = { groups: HistoryGroup[]; nextCursor: string | null };
 
 function groupBy<K, T>(items: T[], keyOf: (item: T) => K): Map<K, T[]> {
   const groups = new Map<K, T[]>();
@@ -266,7 +271,7 @@ function terminLabel(termin: TerminSnapshot, scope: HistoryScope): string {
 function group(actionId: string, entries: AuditEvent[]): HistoryGroup {
   const main = entries.find((e) => !isConsequence(e.type)) ?? entries[0];
   const rest = entries.filter((e) => e !== main);
-  // Read back, an action's entries have no order: role changes before held places.
+  // Read back, an action's entries have no order: role changes before Ausschreibungen.
   const roleChanges = rest.filter((e) => e.type === "signup.role_changed");
   const others = rest.filter((e) => e.type !== "signup.role_changed");
   return {

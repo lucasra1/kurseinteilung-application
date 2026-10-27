@@ -1,3 +1,5 @@
+import { countOf } from "@/lib/wording";
+
 /** The two qualifications; every signup is for one of them. */
 export type Kind = "instruktor" | "praxisanleiter";
 
@@ -18,7 +20,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   "backup-praxisanleiter": "Backup (Praxisanleiter)",
 };
 
-/** Places needed per kind, and how many of them are ausgeschrieben (held for the backups). */
+/** Places needed per kind, and how many of them are ausgeschrieben. */
 export type Staffing = {
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
@@ -26,7 +28,7 @@ export type Staffing = {
   praxisanleiterAusgeschrieben: number;
 };
 
-/** Just the places needed, for what doesn't depend on held places. */
+/** Just the places needed, for what doesn't depend on ausgeschriebenen places. */
 export type Needed = Pick<
   Staffing,
   "instruktorenNeeded" | "praxisanleiterNeeded"
@@ -37,14 +39,27 @@ export type Qualifications = {
   isPraxisanleiter: boolean;
 };
 
+/** The `Staffing` fields of a kind: places needed and the counter of ausgeschriebene ones. */
+export const STAFFING_FIELDS = {
+  instruktor: {
+    needed: "instruktorenNeeded",
+    ausgeschrieben: "instruktorenAusgeschrieben",
+  },
+  praxisanleiter: {
+    needed: "praxisanleiterNeeded",
+    ausgeschrieben: "praxisanleiterAusgeschrieben",
+  },
+} as const satisfies Record<
+  Kind,
+  { needed: keyof Needed; ausgeschrieben: keyof Staffing }
+>;
+
 export function needed(s: Needed, kind: Kind): number {
-  return kind === "instruktor" ? s.instruktorenNeeded : s.praxisanleiterNeeded;
+  return s[STAFFING_FIELDS[kind].needed];
 }
 
 export function ausgeschrieben(s: Staffing, kind: Kind): number {
-  return kind === "instruktor"
-    ? s.instruktorenAusgeschrieben
-    : s.praxisanleiterAusgeschrieben;
+  return s[STAFFING_FIELDS[kind].ausgeschrieben];
 }
 
 /** How many signups of a kind hold a fixed place at most: the places not ausgeschrieben. */
@@ -110,7 +125,7 @@ export function nextRole(
 
 /**
  * Whether `profileId` is a backup of a role with an ausgeschriebenen place on the Termin,
- * so they can take it (Platz übernehmen, or a coordinator's Platz geben).
+ * so they can take it (Platz übernehmen, or an admin's Platz geben).
  */
 export function canClaimPlace(
   termin: Staffing & { signups: { profileId: string; role: Role }[] },
@@ -174,7 +189,8 @@ export function staffingLabel(missing: Missing): string {
 
 /** "1 Instruktor-Platz", "2 Praxisanleiter-Plätze" */
 export function placesLabel(places: number, kind: Kind): string {
-  return `${places} ${KIND_LABEL[kind].one}-${places === 1 ? "Platz" : "Plätze"}`;
+  const { one } = KIND_LABEL[kind];
+  return countOf(places, { one: `${one}-Platz`, many: `${one}-Plätze` });
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -211,33 +227,10 @@ export type FestschreibungResult = {
   automatisch: number;
 };
 
-const termineCount = (n: number) => `${n} ${n === 1 ? "Termin" : "Termine"}`;
-
-/** The feedback after Festschreiben (`value` true) or Aufheben. */
-export function festschreibungMessage(
-  value: boolean,
-  { changed, automatisch }: FestschreibungResult,
-): string {
-  if (value) {
-    return changed === 0
-      ? "Die Auswahl war schon festgeschrieben."
-      : `${termineCount(changed)} festgeschrieben.`;
-  }
-  const lifted =
-    changed === 0
-      ? "In der Auswahl war nichts manuell festgeschrieben."
-      : `Festschreibung bei ${changed} ${changed === 1 ? "Termin" : "Terminen"} aufgehoben.`;
-  if (automatisch === 0) return lifted;
-  return `${lifted} ${termineCount(automatisch)} ${automatisch === 1 ? "bleibt" : "bleiben"} automatisch festgeschrieben (weniger als 3 Monate).`;
-}
-
 /** What a change does to one role of a Termin besides the roles themselves. */
 export type Trigger =
   | { type: "none" }
-  /**
-   * `places` newly ausgeschrieben; `recipients` are the role's backups (profile ids, in
-   * backup order) without the actor: they get "Platz frei".
-   */
+  /** `places` newly ausgeschrieben; `recipients` (backups in order, no actor) get "Platz frei". */
   | { type: "backups"; places: number; recipients: string[] }
   /** No backup for the role: `places` more fixed places are missing than before. */
   | { type: "aufruf"; places: number };
@@ -273,19 +266,14 @@ export type AusschreibungInput = {
   /** After the change (`isFestgeschrieben`). */
   festgeschrieben: boolean;
   isPast: boolean;
-  /**
-   * People the change put on a fixed place on purpose (Platz übernehmen, Platz geben, ↑/↓):
-   * they never count as moving up.
-   */
+  /** Put on a fixed place on purpose (übernehmen, Platz geben, ↑/↓): never moving up. */
   explicit: ReadonlySet<string>;
   /** Never a recipient. */
   actorId: string;
 };
 
 function withAusgeschrieben(s: Staffing, kind: Kind, count: number): Staffing {
-  return kind === "instruktor"
-    ? { ...s, instruktorenAusgeschrieben: count }
-    : { ...s, praxisanleiterAusgeschrieben: count };
+  return { ...s, [STAFFING_FIELDS[kind].ausgeschrieben]: count };
 }
 
 function planRole(
@@ -295,34 +283,38 @@ function planRole(
 ): RolePlan {
   const { before, after } = input;
   const backup: Role = `backup-${kind}`;
-  // 1. A lower number takes ausgeschriebene places away first, fixed ones only after.
+  // A lower number takes ausgeschriebene places away first, fixed ones only after.
   const cut = Math.max(
     0,
     needed(before.staffing, kind) - needed(after.staffing, kind),
   );
   let count = Math.max(0, ausgeschrieben(after.staffing, kind) - cut);
   const none: Trigger = { type: "none" };
-  // 2. Past: the counter stays, so the staffing reads right in hindsight.
+  // Past: the counter stays, so the staffing reads right in hindsight.
   if (input.isPast) return { ausgeschrieben: count, trigger: none };
-  // 3. Not binding: backups move up as they always did.
   if (!input.festgeschrieben) return { ausgeschrieben: 0, trigger: none };
   const counted = count;
 
-  // 4. Backups who would move up stay backups: their places are held instead.
+  // Former backups stay backups; repeated, as a big raise would still lift one.
   const wasBackup = new Set(
     rankedBefore.filter((s) => s.role === backup).map((s) => s.profileId),
   );
   const rankWith = (n: number) =>
     rankSignups(after.signups, withAusgeschrieben(after.staffing, kind, n));
-  count += rankWith(count).filter(
-    (s) =>
-      s.role === kind &&
-      wasBackup.has(s.profileId) &&
-      !input.explicit.has(s.profileId),
-  ).length;
-  const rankedAfter = rankWith(count);
+  const movedUp = (ranked: Array<PlanSignup & { role: Role }>) =>
+    ranked.filter(
+      (s) =>
+        s.role === kind &&
+        wasBackup.has(s.profileId) &&
+        !input.explicit.has(s.profileId),
+    ).length;
+  let rankedAfter = rankWith(count);
+  for (let up = movedUp(rankedAfter); up > 0; up = movedUp(rankedAfter)) {
+    count += up;
+    rankedAfter = rankWith(count);
+  }
 
-  // 5. More fixed places missing than before: offer them to the backups, else call out.
+  // More fixed places missing than before: an Ausschreibung, or without backups an Aufruf.
   const more =
     missingPlaces(rankedAfter, after.staffing)[kind] -
     missingPlaces(rankedBefore, before.staffing)[kind];
@@ -343,10 +335,7 @@ function planRole(
   };
 }
 
-/**
- * The Ausschreibung rule (spec 3): per role the counter of ausgeschriebene places after a
- * change and what it triggers. Pure, so a confirmation can ask before anything is written.
- */
+/** The Ausschreibung rule (spec 3) per role: the new counter and what the change triggers. */
 export function planAusschreibung(
   input: AusschreibungInput,
 ): AusschreibungPlan {
@@ -380,7 +369,7 @@ export function triggered(plans: AusschreibungPlan[]): Triggered[] {
 
 type TerminSignup = { terminId: string; profileId: string };
 
-/** An Aufruf for one role of a Termin: `places` missing without a backup, and whom to call. */
+/** An Aufruf for one role of a Termin: `places` missing without a backup, and its recipients. */
 export type Aufruf<P> = {
   terminId: string;
   kind: Kind;
@@ -389,12 +378,10 @@ export type Aufruf<P> = {
 };
 
 /**
- * Who gets "Du wirst gebraucht" for each Aufruf the plans trigger: everyone of `people`
- * with the role's qualification who is on the Termin in no role, without the actor.
- * Whoever the change just took off the Termin isn't called back either: they get
- * "Ausgetragen".
+ * Who gets "Du wirst gebraucht" per Aufruf: the qualified not on the Termin, without the
+ * actor and whoever the change just took off (they get "Ausgetragen").
  */
-export function aufrufe<P extends { id: string } & Qualifications>(input: {
+export function planAufrufe<P extends { id: string } & Qualifications>(input: {
   plans: AusschreibungPlan[];
   people: P[];
   /** Who was on the Termine before the change, and who is afterwards. */

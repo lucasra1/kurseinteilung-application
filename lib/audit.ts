@@ -1,16 +1,5 @@
-/**
- * The Verlauf (audit log): event types and the shape of their `data`, in one place.
- *
- * Every entry of one action shares an `actionId`. A staffing change (through
- * `mutateStaffing`) writes one main entry per Termin it changed, carrying the role change
- * of the person it targets, plus one `signup.role_changed` per other person whose role
- * changed as a consequence (moved up, became backup, lost the place with a deleted
- * Termin). An action that locked no Termin at all (a Kurs without Termine, a person
- * without signups) writes one main entry without a Termin.
- *
- * `data` is a snapshot of what a reader needs later, since the Termin, Kurs or person may
- * be gone by then. It never contains e-mail addresses or phone numbers.
- */
+// Verlauf event types and their `data`: a snapshot for later readers, since the Termin, Kurs
+// or person may be gone by then. Never e-mail addresses or phone numbers.
 import {
   type Aufruf,
   type AusschreibungPlan,
@@ -71,11 +60,11 @@ export type AuditData = {
   "signup.role_changed": { termin: TerminSnapshot } & RoleShift;
   /** A backup took an ausgeschriebenen place (Backup → role). */
   "signup.claimed": { termin: TerminSnapshot } & RoleShift;
-  /** A coordinator gave a backup an ausgeschriebenen place (Backup → role). */
+  /** An admin gave a backup an ausgeschriebenen place (Backup → role). */
   "signup.place_given": { termin: TerminSnapshot } & RoleShift;
   /**
-   * A consequence: `places` of `kind` held for the backups; `angeschrieben` are the names of
-   * those who got "Platz frei".
+   * A consequence: `places` of `kind` ausgeschrieben; `angeschrieben` are the names of the
+   * backups who got "Platz frei".
    */
   "place.ausgeschrieben": {
     termin: TerminSnapshot;
@@ -178,10 +167,7 @@ export type AuditEvent = {
   };
 }[AuditType];
 
-/**
- * What a staffing change is: every `mutateStaffing` caller passes one. `target` is whom or
- * what the action is aimed at; a target person's own role change goes into the main entry.
- */
+/** A staffing change and its target; the target person's role change is in its main entry. */
 export type StaffingAction = { actor: Actor } & (
   | {
       type:
@@ -205,10 +191,7 @@ export type StaffingAction = { actor: Actor } & (
   | { type: "person.removed"; target: { profileId: string } }
 );
 
-/**
- * Who the action put on a fixed place on purpose, among `onTermin` (profile ids on one
- * Termin afterwards): `planAusschreibung` never counts them as moving up.
- */
+/** Who of `onTermin` the action put on a fixed place on purpose: never counted as moving up. */
 export function explicitlyPlaced(
   action: StaffingAction,
   onTermin: string[],
@@ -249,19 +232,14 @@ export type StaffingSignup = {
 /** A Termin and its ranked signups at one point in time. */
 export type TerminState = { termin: StaffingTermin; signups: StaffingSignup[] };
 
-/**
- * The entries a staffing action writes (see the top of this file). `before` holds the
- * locked Termine, `after` the same ones afterwards (deleted ones missing). Per Termin: the
- * main entry, the role changes of others, then the places the action ausgeschrieben, then
- * its Aufrufe.
- */
+/** Per changed Termin: the main entry, others' role changes, Ausschreibungen, Aufrufe. */
 export function staffingEvents(input: {
   action: StaffingAction;
   before: TerminState[];
   after: TerminState[];
   /** What `planAusschreibung` decided per Termin. */
   plans?: AusschreibungPlan[];
-  /** The Aufrufe of those plans, with the qualified written to (see `aufrufe`). */
+  /** The Aufrufe of those plans, with the qualified written to (see `planAufrufe`). */
   aufrufe?: Aufruf<unknown>[];
   /** The target person's name, needed when they're on none of the Termine. */
   targetName?: string;
@@ -269,10 +247,11 @@ export function staffingEvents(input: {
   kursTitle?: string;
 }): AuditEntry[] {
   const { action } = input;
-  const held = triggered(input.plans ?? []);
+  const triggers = triggered(input.plans ?? []);
   const targetId =
     "profileId" in action.target ? action.target.profileId : undefined;
 
+  // Nothing locked (a Kurs without Termine, a person without signups): one entry, no Termin.
   if (input.before.length === 0) {
     if (action.type === "person.removed") {
       return [
@@ -327,7 +306,7 @@ export function staffingEvents(input: {
         profileId,
         data: { termin, ...data },
       }));
-    const ausgeschrieben: AuditEntry[] = held.flatMap(
+    const ausgeschrieben: AuditEntry[] = triggers.flatMap(
       ({ terminId, kind, trigger }) =>
         terminId === was.termin.id && trigger.type === "backups"
           ? [
@@ -381,9 +360,14 @@ function roleOn(state: TerminState | undefined, profileId: string) {
   return state?.signups.find((s) => s.profileId === profileId)?.role ?? null;
 }
 
-function terminChanges(was: StaffingTermin, now: StaffingTermin) {
-  const changes: TerminChanges = {};
-  for (const field of TERMIN_FIELDS) {
+/** `{ field: [old, new] }` for each of `fields` that differs between `was` and `now`. */
+function changedFields<T, K extends keyof T>(
+  was: T,
+  now: T,
+  fields: readonly K[],
+): { [P in K]?: [T[P], T[P]] } {
+  const changes: { [P in K]?: [T[P], T[P]] } = {};
+  for (const field of fields) {
     if (was[field] !== now[field]) changes[field] = [was[field], now[field]];
   }
   return changes;
@@ -423,7 +407,11 @@ function mainEntry(
       return { type: action.type, ...refs, profileId, data };
     }
     case "termin.updated": {
-      const changes = terminChanges(on.was.termin, (on.now ?? on.was).termin);
+      const changes: TerminChanges = changedFields(
+        on.was.termin,
+        (on.now ?? on.was).termin,
+        TERMIN_FIELDS,
+      );
       return { type: action.type, ...refs, data: { termin, changes } };
     }
     case "termin.deleted":
@@ -485,10 +473,10 @@ export function kursUpdatedEvents(
   was: KursFields,
   now: KursFields,
 ): AuditEntry[] {
-  const changes: KursChanges = {};
-  for (const field of ["title", "description"] as const) {
-    if (was[field] !== now[field]) changes[field] = [was[field], now[field]];
-  }
+  const changes: KursChanges = changedFields(was, now, [
+    "title",
+    "description",
+  ] as const);
   if (Object.keys(changes).length === 0) return [];
   return [
     {
@@ -507,11 +495,14 @@ export function personUpdatedEvents(
   was: PersonFields,
   now: PersonFields,
 ): AuditEntry[] {
-  const changes: PersonChanges = {};
-  if (was.fullName !== now.fullName) {
-    changes.fullName = [was.fullName, now.fullName];
-  }
-  if (was.phone !== now.phone) changes.phone = true;
+  const { fullName, phone } = changedFields(was, now, [
+    "fullName",
+    "phone",
+  ] as const);
+  const changes: PersonChanges = {
+    ...(fullName && { fullName }),
+    ...(phone && { phone: true }),
+  };
   if (Object.keys(changes).length === 0) return [];
   return [
     {

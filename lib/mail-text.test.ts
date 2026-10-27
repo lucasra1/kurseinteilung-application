@@ -5,7 +5,7 @@ import {
   staffingEvents,
   type TerminState,
 } from "@/lib/audit";
-import { coordinatorMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
+import { adminMail, gebrauchtMail, platzFreiMail } from "@/lib/mail-text";
 import type { Aufruf, AusschreibungPlan, Kind, Role } from "@/lib/staffing";
 
 const LEA = { id: "lea", fullName: "Lea Berger" };
@@ -53,7 +53,7 @@ function state(
   return { termin, signups };
 }
 
-/** The coordinator mail for an action, with entries built the way mutateStaffing builds them. */
+/** The admin mail for an action, with entries built the way mutateStaffing builds them. */
 function mail(
   action: StaffingAction,
   before: TerminState[],
@@ -63,7 +63,7 @@ function mail(
   aufrufe: Aufruf<unknown>[] = [],
 ) {
   const entries = staffingEvents({ action, before, after, plans, aufrufe });
-  return coordinatorMail({
+  return adminMail({
     actor: action.actor,
     entries,
     after,
@@ -72,7 +72,7 @@ function mail(
   });
 }
 
-describe("coordinatorMail", () => {
+describe("adminMail", () => {
   it("describes a self-withdrawal, the backup moving up and the Stand afterwards", () => {
     expect(
       mail(
@@ -93,9 +93,9 @@ describe("coordinatorMail", () => {
       subject: "Abmeldung: Erste Hilfe Grundkurs, Sa., 07.11.2026",
       text:
         "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
-        "Anna Huber hat sich ausgetragen (Instruktor).\n" +
-        "– Ben Maier rückt als Instruktor nach.\n" +
-        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1.\n" +
+        "Anna Huber hat sich ausgetragen (Instruktor).\n\n" +
+        "– Ben Maier rückt als Instruktor nach.\n\n" +
+        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "Kurseinteilung",
     });
@@ -118,7 +118,7 @@ describe("coordinatorMail", () => {
         ],
       )?.text,
     ).toContain(
-      "Ben Maier hat sich eingetragen (Backup Instruktor).\n" +
+      "Ben Maier hat sich eingetragen (Backup Instruktor).\n\n" +
         "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1, 1 Backup.",
     );
   });
@@ -145,13 +145,13 @@ describe("coordinatorMail", () => {
 
     expect(result?.text).toBe(
       "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
-        "Lea Berger hat Anna Huber entfernt (Instruktor).\n" +
-        "– Ben Maier rückt als Instruktor nach.\n" +
-        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1.\n" +
+        "Lea Berger hat Anna Huber entfernt (Instruktor).\n\n" +
+        "– Ben Maier rückt als Instruktor nach.\n\n" +
+        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "„Erste Hilfe Grundkurs – Tag 2“ am So., 08.11.2026, 09:00–17:00\n" +
-        "Lea Berger hat Anna Huber entfernt (Praxisanleiter).\n" +
-        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1.\n" +
+        "Lea Berger hat Anna Huber entfernt (Praxisanleiter).\n\n" +
+        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1.\n\n" +
         "https://kurse.example.org/termine?termin=t2\n\n" +
         "Kurseinteilung",
     );
@@ -274,7 +274,7 @@ describe("coordinatorMail", () => {
         )?.text,
       ).toBe(
         "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
-          "Lea Berger hat den Kurs „Erste Hilfe Grundkurs“ gelöscht.\n" +
+          "Lea Berger hat den Kurs „Erste Hilfe Grundkurs“ gelöscht.\n\n" +
           "– Anna Huber ist nicht mehr eingetragen (Instruktor).\n\n" +
           "Kurseinteilung",
       );
@@ -368,7 +368,7 @@ describe("coordinatorMail", () => {
   });
 });
 
-describe("coordinatorMail for Festschreiben", () => {
+describe("adminMail for Festschreiben", () => {
   const anna = [signup(ANNA, "instruktor", 1, "instruktor")];
   const T2: StaffingTermin = { ...T1, id: "t2", topic: "Tag 2" };
 
@@ -392,7 +392,7 @@ describe("coordinatorMail for Festschreiben", () => {
   });
 });
 
-describe("coordinatorMail for Ausschreibung", () => {
+describe("adminMail for Ausschreibung", () => {
   const CLARA = { id: "clara", fullName: "Clara Ott" };
   const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
   const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
@@ -434,9 +434,9 @@ describe("coordinatorMail for Ausschreibung", () => {
       subject: "Abmeldung: Erste Hilfe Grundkurs, Sa., 07.11.2026",
       text:
         "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
-        "Anna Huber hat sich ausgetragen (Instruktor).\n" +
-        "– Der Termin ist festgeschrieben: 1 Instruktor-Platz ist ausgeschrieben. Angeschrieben: Ben Maier, Clara Ott (Backups).\n" +
-        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1, 2 Backups.\n" +
+        "Anna Huber hat sich ausgetragen (Instruktor).\n\n" +
+        "– Der Termin ist festgeschrieben: 1 Instruktor-Platz ist ausgeschrieben. Angeschrieben: Ben Maier, Clara Ott (Backups).\n\n" +
+        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1, 2 Backups.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "Kurseinteilung",
     });
@@ -473,14 +473,14 @@ describe("coordinatorMail for Ausschreibung", () => {
       subject: "Platz übernommen: Erste Hilfe Grundkurs, Sa., 07.11.2026",
       text:
         "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
-        "Ben Maier hat den Platz übernommen (Backup → Instruktor).\n" +
-        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1, 1 Backup.\n" +
+        "Ben Maier hat den Platz übernommen (Backup → Instruktor).\n\n" +
+        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1, 1 Backup.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "Kurseinteilung",
     });
   });
 
-  it("tells the other coordinators who gave whom the place", () => {
+  it("tells the other admins who gave whom the place", () => {
     expect(
       mail(
         {
@@ -500,15 +500,15 @@ describe("coordinatorMail for Ausschreibung", () => {
       subject: "Platz gegeben: Erste Hilfe Grundkurs, Sa., 07.11.2026",
       text:
         "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
-        "Lea Berger hat Clara Ott den Platz gegeben (Backup → Instruktor).\n" +
-        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1, 1 Backup.\n" +
+        "Lea Berger hat Clara Ott den Platz gegeben (Backup → Instruktor).\n\n" +
+        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1, 1 Backup.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "Kurseinteilung",
     });
   });
 });
 
-describe("coordinatorMail for Aufruf", () => {
+describe("adminMail for Aufruf", () => {
   const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
   const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
   const plans: AusschreibungPlan[] = [
@@ -544,9 +544,9 @@ describe("coordinatorMail for Aufruf", () => {
       subject: "Abmeldung: Erste Hilfe Grundkurs, Sa., 07.11.2026",
       text:
         "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
-        "Anna Huber hat sich ausgetragen (Instruktor).\n" +
-        "– Kein Backup: 14 Qualifizierte angeschrieben.\n" +
-        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1.\n" +
+        "Anna Huber hat sich ausgetragen (Instruktor).\n\n" +
+        "– Kein Backup: 14 Qualifizierte angeschrieben.\n\n" +
+        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "Kurseinteilung",
     });
@@ -576,7 +576,7 @@ describe("platzFreiMail", () => {
       subject: "Platz frei: Erste Hilfe Grundkurs, Sa., 07.11.2026",
       text:
         "Hallo Ben Maier,\n\n" +
-        "bei „Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00 ist ein Instruktor-Platz frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt den Platz.\n\n" +
+        "du bist Backup bei „Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00. Ein Instruktor-Platz ist frei geworden. Wer zuerst übernimmt, bekommt ihn.\n\n" +
         "https://kurse.example.org/termine?termin=t1\n\n" +
         "Kurseinteilung",
     });
@@ -592,7 +592,7 @@ describe("platzFreiMail", () => {
         appUrl: APP_URL,
       }).text,
     ).toContain(
-      "sind 2 Praxisanleiter-Plätze frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt einen davon.",
+      "09:00–17:00. 2 Praxisanleiter-Plätze sind frei geworden. Wer zuerst übernimmt, bekommt einen davon.",
     );
   });
 });
