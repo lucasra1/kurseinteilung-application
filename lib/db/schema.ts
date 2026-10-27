@@ -52,6 +52,9 @@ export const termine = appSchema.table(
     location: text(),
     instruktorenNeeded: integer().notNull().default(0),
     praxisanleiterNeeded: integer().notNull().default(0),
+    /** Fixed places held for the backups; see `planAusschreibung` in lib/staffing.ts. */
+    instruktorenAusgeschrieben: integer().notNull().default(0),
+    praxisanleiterAusgeschrieben: integer().notNull().default(0),
     /** Set manually by a coordinator; see `isFestgeschrieben` in lib/staffing.ts. */
     festgeschrieben: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -61,6 +64,10 @@ export const termine = appSchema.table(
     check(
       "termine_staffing_check",
       sql`${t.instruktorenNeeded} >= 0 and ${t.praxisanleiterNeeded} >= 0 and ${t.instruktorenNeeded} + ${t.praxisanleiterNeeded} >= 1`,
+    ),
+    check(
+      "termine_ausgeschrieben_check",
+      sql`${t.instruktorenAusgeschrieben} >= 0 and ${t.praxisanleiterAusgeschrieben} >= 0`,
     ),
     index().on(t.kursId),
   ],

@@ -1,27 +1,36 @@
 import "server-only";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import {
+  explicitlyPlaced,
   type StaffingAction,
   type StaffingTermin,
   staffingEvents,
   type TerminState,
 } from "@/lib/audit";
 import { logEvents } from "@/lib/dal/audit";
-import { isPastDate } from "@/lib/dates";
+import { isPastDate, todayInVienna } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import { DomainError } from "@/lib/errors";
 import {
+  type PlatzFrei,
   type StaffingChange,
   sendStaffingNotifications,
 } from "@/lib/notifications";
 import {
+  type AusschreibungPlan,
+  ausgeschrieben,
   diffRoles,
   hasQualification,
+  isBackup,
+  isFestgeschrieben,
   type Kind,
   needed,
+  planAusschreibung,
   type RoleSnapshot,
   rankSignups,
+  sortByPosition,
+  triggered,
 } from "@/lib/staffing";
 
 export type LockedTermin = StaffingTermin;
@@ -64,6 +73,8 @@ async function loadTermine(
       location: termine.location,
       instruktorenNeeded: termine.instruktorenNeeded,
       praxisanleiterNeeded: termine.praxisanleiterNeeded,
+      instruktorenAusgeschrieben: termine.instruktorenAusgeschrieben,
+      praxisanleiterAusgeschrieben: termine.praxisanleiterAusgeschrieben,
       festgeschrieben: termine.festgeschrieben,
     })
     .from(termine)
@@ -156,11 +167,69 @@ function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
   );
 }
 
+/** `planAusschreibung` for every Termin still there after `run`. */
+function planTermine(
+  action: StaffingAction,
+  before: Map<string, LockedTermin>,
+  afterRun: Map<string, LockedTermin>,
+  signupsBefore: SignupRow[],
+  signupsAfter: SignupRow[],
+): AusschreibungPlan[] {
+  const today = todayInVienna();
+  return [...afterRun.values()].map((termin) => {
+    const onTermin = signupsAfter.filter((s) => s.terminId === termin.id);
+    return planAusschreibung({
+      terminId: termin.id,
+      before: {
+        staffing: before.get(termin.id) ?? termin,
+        signups: signupsBefore.filter((s) => s.terminId === termin.id),
+      },
+      after: { staffing: termin, signups: onTermin },
+      festgeschrieben: isFestgeschrieben(termin, today),
+      isPast: termin.date < today,
+      explicit: explicitlyPlaced(
+        action,
+        onTermin.map((s) => s.profileId),
+      ),
+      actorId: action.actor.id,
+    });
+  });
+}
+
+/** Writes the planned counters; returns the Termine with them. */
+async function writeCounters(
+  tx: Tx,
+  afterRun: Map<string, LockedTermin>,
+  plans: AusschreibungPlan[],
+): Promise<Map<string, LockedTermin>> {
+  const after = new Map(afterRun);
+  for (const plan of plans) {
+    const termin = afterRun.get(plan.terminId);
+    if (!termin) continue;
+    const counters = {
+      instruktorenAusgeschrieben: plan.roles.instruktor.ausgeschrieben,
+      praxisanleiterAusgeschrieben: plan.roles.praxisanleiter.ausgeschrieben,
+    };
+    if (
+      counters.instruktorenAusgeschrieben ===
+        termin.instruktorenAusgeschrieben &&
+      counters.praxisanleiterAusgeschrieben ===
+        termin.praxisanleiterAusgeschrieben
+    ) {
+      continue;
+    }
+    await tx.update(termine).set(counters).where(eq(termine.id, termin.id));
+    after.set(termin.id, { ...termin, ...counters });
+  }
+  return after;
+}
+
 /**
  * Runs a change to the signups of some Termine in one transaction: locks the Termin rows
- * first (in id order, so concurrent changes queue up instead of deadlocking), diffs roles
- * before and after, writes the Verlauf for `action` (see lib/audit.ts) and sends the mails
- * built from it after the commit.
+ * first (in id order, so concurrent changes queue up instead of deadlocking), applies the
+ * Ausschreibung rule (`planAusschreibung`), diffs roles before and after, writes the
+ * Verlauf for `action` (see lib/audit.ts) and sends the mails built from it after the
+ * commit.
  */
 export async function mutateStaffing<T>(opts: {
   action: StaffingAction;
@@ -176,8 +245,19 @@ export async function mutateStaffing<T>(opts: {
 
     const result = await opts.run(tx, before);
 
-    const after = await loadTermine(tx, ids, false);
+    const afterRun = await loadTermine(tx, ids, false);
     const signupsAfter = await loadSignups(tx, ids);
+    const plans = planTermine(
+      action,
+      before,
+      afterRun,
+      signupsBefore,
+      signupsAfter,
+    );
+    // Nothing of the rule is written yet: a check on `triggered(plans)` that throws here
+    // (e.g. a confirmation) rolls the whole action back, without counters, Verlauf or mails.
+    const after = await writeCounters(tx, afterRun, plans);
+
     const rankedBefore = rankedByTermin(before, signupsBefore);
     const rankedAfter = rankedByTermin(after, signupsAfter);
     const changes = diffRoles(snapshot(rankedBefore), snapshot(rankedAfter));
@@ -188,6 +268,7 @@ export async function mutateStaffing<T>(opts: {
       action,
       before: states(before, rankedBefore),
       after: afterStates,
+      plans,
       ...names,
     });
     await logEvents(tx, action.actor, entries);
@@ -205,6 +286,7 @@ export async function mutateStaffing<T>(opts: {
       result,
       changes,
       entries,
+      plans,
       afterStates,
       before,
       after,
@@ -228,11 +310,25 @@ export async function mutateStaffing<T>(opts: {
     return [{ ...change, termin, person }];
   });
 
+  // The rule never triggers on past Termine, and recipients are on the Termin afterwards.
+  const platzFrei: PlatzFrei[] = triggered(out.plans).flatMap(
+    ({ terminId, kind, trigger }) => {
+      const termin = out.after.get(terminId);
+      if (trigger.type !== "backups" || !termin) return [];
+      const recipients = trigger.recipients.flatMap((id) => {
+        const person = out.people.get(id);
+        return person ? [person] : [];
+      });
+      return [{ termin, kind, places: trigger.places, recipients }];
+    },
+  );
+
   await sendStaffingNotifications({
     actor: action.actor,
     entries: out.entries,
     after: out.afterStates,
     changes: enriched,
+    platzFrei,
   });
   return out.result;
 }
@@ -248,8 +344,9 @@ export function lockedTermin(
 }
 
 /**
- * Appends a person at the end of the list for `kind`: a fixed place if one is free,
- * otherwise a backup. Call only inside `mutateStaffing.run`.
+ * Signs a person up for `kind`: while a place of the kind is ausgeschrieben they take it
+ * (first come, first served), otherwise they go to the end of the list, on a free fixed
+ * place or as a backup. Call only inside `mutateStaffing.run`.
  */
 export async function appendSignup(
   tx: Tx,
@@ -284,6 +381,88 @@ export async function appendSignup(
   await tx
     .insert(signups)
     .values({ terminId: termin.id, profileId, kind, position: nextPosition });
+  if (ausgeschrieben(termin, kind) > 0) {
+    await takeHeldPlace(tx, termin, profileId, kind);
+  }
+}
+
+async function signupsInOrder(tx: Tx, terminId: string) {
+  return sortByPosition(
+    await tx
+      .select({
+        id: signups.id,
+        profileId: signups.profileId,
+        kind: signups.kind,
+        position: signups.position,
+        createdAt: signups.createdAt,
+      })
+      .from(signups)
+      .where(eq(signups.terminId, terminId)),
+  );
+}
+
+/**
+ * Moves a signed-up person to the first backup slot of `kind` (before every other backup),
+ * renumbers the Termin's positions and lowers the counter by one: they now hold the place.
+ * `termin` is the locked state, with a place of `kind` ausgeschrieben.
+ */
+async function takeHeldPlace(
+  tx: Tx,
+  termin: LockedTermin,
+  profileId: string,
+  kind: Kind,
+): Promise<void> {
+  const rows = await signupsInOrder(tx, termin.id);
+  const person = rows.find((row) => row.profileId === profileId);
+  if (!person) throw new DomainError("nicht-eingetragen");
+  const others = rows.filter((row) => row !== person);
+  const firstBackup = rankSignups(others, termin).find(
+    (row) => row.role === `backup-${kind}`,
+  );
+  const at = firstBackup
+    ? others.findIndex((row) => row.id === firstBackup.id)
+    : others.length;
+  const order = [...others.slice(0, at), person, ...others.slice(at)];
+  for (const [index, row] of order.entries()) {
+    if (row.position === index + 1) continue;
+    await tx
+      .update(signups)
+      .set({ position: index + 1 })
+      .where(eq(signups.id, row.id));
+  }
+  await tx
+    .update(termine)
+    .set(
+      kind === "instruktor"
+        ? {
+            instruktorenAusgeschrieben: sql`${termine.instruktorenAusgeschrieben} - 1`,
+          }
+        : {
+            praxisanleiterAusgeschrieben: sql`${termine.praxisanleiterAusgeschrieben} - 1`,
+          },
+    )
+    .where(eq(termine.id, termin.id));
+}
+
+/**
+ * Gives a backup an ausgeschriebenen place of their role (Platz übernehmen, Platz geben):
+ * `platz-vergeben` once none is left, `kein-backup` if the person isn't a backup here. The
+ * Termin lock of `mutateStaffing` queues concurrent claims, so exactly one wins. Call only
+ * inside `mutateStaffing.run`, with the action's target as the person.
+ */
+export async function claimHeldPlace(
+  tx: Tx,
+  termin: LockedTermin,
+  profileId: string,
+): Promise<void> {
+  const ranked = rankSignups(await signupsInOrder(tx, termin.id), termin);
+  const signup = ranked.find((row) => row.profileId === profileId);
+  if (!signup) throw new DomainError("kein-backup");
+  if (ausgeschrieben(termin, signup.kind) === 0) {
+    throw new DomainError("platz-vergeben");
+  }
+  if (!isBackup(signup.role)) throw new DomainError("kein-backup");
+  await takeHeldPlace(tx, termin, profileId, signup.kind);
 }
 
 /** Removes a person and moves everyone behind them up. Call only inside `mutateStaffing.run`. */

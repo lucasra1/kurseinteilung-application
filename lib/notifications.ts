@@ -7,8 +7,8 @@ import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { type EmailMessage, sendEmails } from "@/lib/email";
 import { env } from "@/lib/env";
-import { coordinatorMail } from "@/lib/mail-text";
-import { ROLE_LABEL, type RoleChange } from "@/lib/staffing";
+import { coordinatorMail, platzFreiMail } from "@/lib/mail-text";
+import { type Kind, ROLE_LABEL, type RoleChange } from "@/lib/staffing";
 
 export type StaffingChange = RoleChange & {
   termin: LockedTermin;
@@ -67,6 +67,15 @@ async function adminEmails(excludeProfileId: string): Promise<string[]> {
   return admins.filter((a) => a.id !== excludeProfileId).map((a) => a.email);
 }
 
+/** Places of one role the action ausgeschrieben, and the backups to offer them to. */
+export type PlatzFrei = {
+  termin: LockedTermin;
+  kind: Kind;
+  places: number;
+  /** Without the actor. */
+  recipients: { fullName: string; email: string }[];
+};
+
 /** What one staffing action did, as `mutateStaffing` hands it over after the commit. */
 export type StaffingOutcome = {
   actor: Actor;
@@ -76,7 +85,24 @@ export type StaffingOutcome = {
   after: TerminState[];
   /** Role changes of people who still have an account, on Termine that aren't past. */
   changes: StaffingChange[];
+  platzFrei: PlatzFrei[];
 };
+
+/** "Platz frei" to the backups of every role whose places the action ausgeschrieben. */
+async function platzFreiEmails(outcome: StaffingOutcome) {
+  return outcome.platzFrei.flatMap(({ termin, kind, places, recipients }) =>
+    recipients.map((person) => ({
+      to: person.email,
+      ...platzFreiMail({
+        termin,
+        kind,
+        places,
+        name: person.fullName,
+        appUrl: env.APP_URL,
+      }),
+    })),
+  );
+}
 
 /** Everyone whose role someone else changed. */
 async function betroffeneEmails(outcome: StaffingOutcome) {
@@ -109,6 +135,7 @@ type MailGroup = {
  * more urgent ones are out already (spec 4, Kontingent).
  */
 const MAIL_GROUPS: MailGroup[] = [
+  { name: "platz-frei", build: platzFreiEmails },
   { name: "betroffene", build: betroffeneEmails },
   { name: "koordination", build: koordinationEmails },
 ];

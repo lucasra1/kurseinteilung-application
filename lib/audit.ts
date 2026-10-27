@@ -11,7 +11,13 @@
  * `data` is a snapshot of what a reader needs later, since the Termin, Kurs or person may
  * be gone by then. It never contains e-mail addresses or phone numbers.
  */
-import type { Kind, Qualifications, Role } from "@/lib/staffing";
+import {
+  type AusschreibungPlan,
+  type Kind,
+  type Qualifications,
+  type Role,
+  triggered,
+} from "@/lib/staffing";
 
 /** Who did something. `CurrentUser` fits. */
 export type Actor = { id: string; fullName: string };
@@ -62,6 +68,18 @@ export type AuditData = {
   } & RoleShift;
   /** A consequence for someone the action didn't target. */
   "signup.role_changed": { termin: TerminSnapshot } & RoleShift;
+  /** A backup took an ausgeschriebenen place (Backup → role). */
+  "signup.claimed": { termin: TerminSnapshot } & RoleShift;
+  /**
+   * A consequence: `places` of `kind` held for the backups; `angeschrieben` are the names of
+   * those who got "Platz frei".
+   */
+  "place.ausgeschrieben": {
+    termin: TerminSnapshot;
+    kind: Kind;
+    places: number;
+    angeschrieben: string[];
+  };
   "termin.updated": { termin: TerminSnapshot; changes: TerminChanges };
   "termin.deleted": { termin: TerminSnapshot };
   /** One per selected Termin whose manual flag was set. */
@@ -107,6 +125,16 @@ export type KursChanges = Partial<Record<keyof KursFields, [string, string]>>;
 
 export type AuditType = keyof AuditData;
 
+const CONSEQUENCES: ReadonlySet<AuditType> = new Set([
+  "signup.role_changed",
+  "place.ausgeschrieben",
+]);
+
+/** Entry types that only follow from an action's main entry, never stand for it. */
+export function isConsequence(type: AuditType): boolean {
+  return CONSEQUENCES.has(type);
+}
+
 /** An entry to write; `logEvents` adds id, time, action and actor. */
 export type AuditEntry = {
   [T in AuditType]: {
@@ -142,7 +170,7 @@ export type AuditEvent = {
  */
 export type StaffingAction = { actor: Actor } & (
   | {
-      type: "signup.created" | "signup.removed";
+      type: "signup.created" | "signup.removed" | "signup.claimed";
       target: { terminId: string; profileId: string };
     }
   | {
@@ -159,6 +187,25 @@ export type StaffingAction = { actor: Actor } & (
   | { type: "person.removed"; target: { profileId: string } }
 );
 
+/**
+ * Who the action put on a fixed place on purpose, among `onTermin` (profile ids on one
+ * Termin afterwards): `planAusschreibung` never counts them as moving up.
+ */
+export function explicitlyPlaced(
+  action: StaffingAction,
+  onTermin: string[],
+): Set<string> {
+  switch (action.type) {
+    case "signup.claimed":
+      return new Set([action.target.profileId]);
+    // A swap across the backup line is deliberate, whoever it lifts.
+    case "signup.moved":
+      return new Set(onTermin);
+    default:
+      return new Set();
+  }
+}
+
 /** A Termin as `mutateStaffing` locks it. */
 export type StaffingTermin = TerminSnapshot & {
   id: string;
@@ -166,6 +213,8 @@ export type StaffingTermin = TerminSnapshot & {
   location: string | null;
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
+  instruktorenAusgeschrieben: number;
+  praxisanleiterAusgeschrieben: number;
   /** The manual flag; see `isFestgeschrieben` for the rule. */
   festgeschrieben: boolean;
 };
@@ -183,18 +232,22 @@ export type TerminState = { termin: StaffingTermin; signups: StaffingSignup[] };
 
 /**
  * The entries a staffing action writes (see the top of this file). `before` holds the
- * locked Termine, `after` the same ones afterwards (deleted ones missing).
+ * locked Termine, `after` the same ones afterwards (deleted ones missing). Per Termin: the
+ * main entry, the role changes of others, then the places the action ausgeschrieben.
  */
 export function staffingEvents(input: {
   action: StaffingAction;
   before: TerminState[];
   after: TerminState[];
+  /** What `planAusschreibung` decided per Termin. */
+  plans?: AusschreibungPlan[];
   /** The target person's name, needed when they're on none of the Termine. */
   targetName?: string;
   /** The target Kurs' title, needed when it has no Termine. */
   kursTitle?: string;
 }): AuditEntry[] {
   const { action } = input;
+  const held = triggered(input.plans ?? []);
   const targetId =
     "profileId" in action.target ? action.target.profileId : undefined;
 
@@ -252,7 +305,27 @@ export function staffingEvents(input: {
         profileId,
         data: { termin, ...data },
       }));
-    return [main, ...consequences];
+    const ausgeschrieben: AuditEntry[] = held.flatMap(
+      ({ terminId, kind, trigger }) =>
+        terminId === was.termin.id && trigger.type === "backups"
+          ? [
+              {
+                type: "place.ausgeschrieben",
+                ...refs,
+                profileId: null,
+                data: {
+                  termin,
+                  kind,
+                  places: trigger.places,
+                  angeschrieben: trigger.recipients.map(
+                    (id) => people.get(id) ?? "",
+                  ),
+                },
+              },
+            ]
+          : [],
+    );
+    return [main, ...consequences, ...ausgeschrieben];
   });
 }
 
@@ -303,6 +376,7 @@ function mainEntry(
   switch (action.type) {
     case "signup.created":
     case "signup.removed":
+    case "signup.claimed":
     case "person.removed": {
       const { profileId } = action.target;
       const data = { termin, ...on.shift(profileId) };

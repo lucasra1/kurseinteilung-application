@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  explicitlyPlaced,
   kursCreatedEvents,
   kursUpdatedEvents,
   personUpdatedEvents,
@@ -25,6 +26,8 @@ const T1: StaffingTermin = {
   location: "Halle 2",
   instruktorenNeeded: 1,
   praxisanleiterNeeded: 1,
+  instruktorenAusgeschrieben: 0,
+  praxisanleiterAusgeschrieben: 0,
   festgeschrieben: false,
 };
 
@@ -616,6 +619,146 @@ describe("staffingEvents for Festschreiben", () => {
         kursId: "k1",
         profileId: null,
         data: { termin: T1_SNAPSHOT },
+      },
+    ]);
+  });
+});
+
+describe("explicitlyPlaced", () => {
+  const onTermin = [ANNA.id, BEN.id];
+
+  it("is the claimer for Platz übernehmen", () => {
+    const action = {
+      type: "signup.claimed",
+      actor: BEN,
+      target: { terminId: "t1", profileId: BEN.id },
+    } as const;
+    expect(explicitlyPlaced(action, onTermin)).toEqual(new Set([BEN.id]));
+  });
+
+  it("is everyone on the Termin for ↑/↓: a swap never counts as moving up", () => {
+    const action = {
+      type: "signup.moved",
+      actor: LEA,
+      target: { terminId: "t1", profileId: BEN.id },
+      direction: "up",
+    } as const;
+    expect(explicitlyPlaced(action, onTermin)).toEqual(new Set(onTermin));
+  });
+
+  it("is nobody for a withdrawal", () => {
+    const action = {
+      type: "signup.removed",
+      actor: ANNA,
+      target: { terminId: "t1", profileId: ANNA.id },
+    } as const;
+    expect(explicitlyPlaced(action, onTermin)).toEqual(new Set());
+  });
+});
+
+describe("staffingEvents for Ausschreibung", () => {
+  const CLARA = { id: "clara", fullName: "Clara Ott" };
+  const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
+
+  it("writes the withdrawal, then the held place with the names written to", () => {
+    const events = staffingEvents({
+      action: {
+        type: "signup.removed",
+        actor: ANNA,
+        target: { terminId: "t1", profileId: ANNA.id },
+      },
+      before: [
+        state(T1, [
+          signup(ANNA, "instruktor", 1, "instruktor"),
+          signup(BEN, "instruktor", 2, "backup-instruktor"),
+          signup(CLARA, "instruktor", 3, "backup-instruktor"),
+        ]),
+      ],
+      after: [
+        state({ ...T1, instruktorenAusgeschrieben: 1 }, [
+          signup(BEN, "instruktor", 1, "backup-instruktor"),
+          signup(CLARA, "instruktor", 2, "backup-instruktor"),
+        ]),
+      ],
+      plans: [
+        {
+          terminId: "t1",
+          roles: {
+            instruktor: {
+              ausgeschrieben: 1,
+              trigger: {
+                type: "backups",
+                places: 1,
+                recipients: [BEN.id, CLARA.id],
+              },
+            },
+            praxisanleiter: NONE,
+          },
+        },
+      ],
+    });
+
+    expect(events).toEqual([
+      {
+        type: "signup.removed",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: ANNA.id,
+        data: {
+          termin: T1_SNAPSHOT,
+          personName: "Anna Huber",
+          from: "instruktor",
+          to: null,
+        },
+      },
+      {
+        type: "place.ausgeschrieben",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: null,
+        data: {
+          termin: T1_SNAPSHOT,
+          kind: "instruktor",
+          places: 1,
+          angeschrieben: ["Ben Maier", "Clara Ott"],
+        },
+      },
+    ]);
+  });
+
+  it("writes Platz übernehmen as the claimer's role change, Backup → Instruktor", () => {
+    const events = staffingEvents({
+      action: {
+        type: "signup.claimed",
+        actor: BEN,
+        target: { terminId: "t1", profileId: BEN.id },
+      },
+      before: [
+        state({ ...T1, instruktorenAusgeschrieben: 1 }, [
+          signup(BEN, "instruktor", 1, "backup-instruktor"),
+          signup(CLARA, "instruktor", 2, "backup-instruktor"),
+        ]),
+      ],
+      after: [
+        state(T1, [
+          signup(BEN, "instruktor", 1, "instruktor"),
+          signup(CLARA, "instruktor", 2, "backup-instruktor"),
+        ]),
+      ],
+    });
+
+    expect(events).toEqual([
+      {
+        type: "signup.claimed",
+        terminId: "t1",
+        kursId: "k1",
+        profileId: BEN.id,
+        data: {
+          termin: T1_SNAPSHOT,
+          personName: "Ben Maier",
+          from: "backup-instruktor",
+          to: "instruktor",
+        },
       },
     ]);
   });

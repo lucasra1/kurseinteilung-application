@@ -5,8 +5,8 @@ import {
   staffingEvents,
   type TerminState,
 } from "@/lib/audit";
-import { coordinatorMail } from "@/lib/mail-text";
-import type { Kind, Role } from "@/lib/staffing";
+import { coordinatorMail, platzFreiMail } from "@/lib/mail-text";
+import type { AusschreibungPlan, Kind, Role } from "@/lib/staffing";
 
 const LEA = { id: "lea", fullName: "Lea Berger" };
 const ANNA = { id: "anna", fullName: "Anna Huber" };
@@ -26,6 +26,8 @@ const T1: StaffingTermin = {
   location: "Halle 2",
   instruktorenNeeded: 1,
   praxisanleiterNeeded: 1,
+  instruktorenAusgeschrieben: 0,
+  praxisanleiterAusgeschrieben: 0,
   festgeschrieben: false,
 };
 
@@ -57,8 +59,9 @@ function mail(
   before: TerminState[],
   after: TerminState[],
   today = TODAY,
+  plans: AusschreibungPlan[] = [],
 ) {
-  const entries = staffingEvents({ action, before, after });
+  const entries = staffingEvents({ action, before, after, plans });
   return coordinatorMail({
     actor: action.actor,
     entries,
@@ -385,5 +388,129 @@ describe("coordinatorMail for Festschreiben", () => {
     expect(
       mail({ type: "termin.aufgehoben", actor: LEA, target }, locked, open),
     ).toBeNull();
+  });
+});
+
+describe("coordinatorMail for Ausschreibung", () => {
+  const CLARA = { id: "clara", fullName: "Clara Ott" };
+  const NONE = { ausgeschrieben: 0, trigger: { type: "none" } } as const;
+  const T1F: StaffingTermin = { ...T1, festgeschrieben: true };
+  const backups = (recipients: string[]): AusschreibungPlan[] => [
+    {
+      terminId: "t1",
+      roles: {
+        instruktor: {
+          ausgeschrieben: 1,
+          trigger: { type: "backups", places: 1, recipients },
+        },
+        praxisanleiter: NONE,
+      },
+    },
+  ];
+  const withdrawal = {
+    type: "signup.removed",
+    actor: ANNA,
+    target: { terminId: "t1", profileId: ANNA.id },
+  } as const;
+  const before = [
+    state(T1F, [
+      signup(ANNA, "instruktor", 1, "instruktor"),
+      signup(BEN, "instruktor", 2, "backup-instruktor"),
+      signup(CLARA, "instruktor", 3, "backup-instruktor"),
+    ]),
+  ];
+  const after = [
+    state({ ...T1F, instruktorenAusgeschrieben: 1 }, [
+      signup(BEN, "instruktor", 1, "backup-instruktor"),
+      signup(CLARA, "instruktor", 2, "backup-instruktor"),
+    ]),
+  ];
+
+  it("says the place is ausgeschrieben and whom it was offered to", () => {
+    expect(
+      mail(withdrawal, before, after, TODAY, backups([BEN.id, CLARA.id])),
+    ).toEqual({
+      subject: "Abmeldung: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      text:
+        "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
+        "Anna Huber hat sich ausgetragen (Instruktor).\n" +
+        "– Der Termin ist festgeschrieben: 1 Instruktor-Platz ist ausgeschrieben. Angeschrieben: Ben Maier, Clara Ott (Backups).\n" +
+        "Aktueller Stand: Instruktoren 0/1, Praxisanleiter 0/1, 2 Backups.\n" +
+        "https://kurse.example.org/termine?termin=t1\n\n" +
+        "Kurseinteilung",
+    });
+  });
+
+  it("names a single backup in the singular, and nobody if the only backup acted", () => {
+    expect(
+      mail(withdrawal, before, after, TODAY, backups([BEN.id]))?.text,
+    ).toContain(
+      "– Der Termin ist festgeschrieben: 1 Instruktor-Platz ist ausgeschrieben. Angeschrieben: Ben Maier (Backup).\n",
+    );
+    expect(mail(withdrawal, before, after, TODAY, backups([]))?.text).toContain(
+      "– Der Termin ist festgeschrieben: 1 Instruktor-Platz ist ausgeschrieben.\n",
+    );
+  });
+
+  it("has its own subject for Platz übernehmen", () => {
+    expect(
+      mail(
+        {
+          type: "signup.claimed",
+          actor: BEN,
+          target: { terminId: "t1", profileId: BEN.id },
+        },
+        after,
+        [
+          state(T1F, [
+            signup(BEN, "instruktor", 1, "instruktor"),
+            signup(CLARA, "instruktor", 2, "backup-instruktor"),
+          ]),
+        ],
+      ),
+    ).toEqual({
+      subject: "Platz übernommen: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      text:
+        "„Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00\n" +
+        "Ben Maier hat den Platz übernommen (Backup → Instruktor).\n" +
+        "Aktueller Stand: Instruktoren 1/1, Praxisanleiter 0/1, 1 Backup.\n" +
+        "https://kurse.example.org/termine?termin=t1\n\n" +
+        "Kurseinteilung",
+    });
+  });
+});
+
+describe("platzFreiMail", () => {
+  it("offers the place to a backup, with the link to the Termin", () => {
+    expect(
+      platzFreiMail({
+        termin: T1,
+        kind: "instruktor",
+        places: 1,
+        name: "Ben Maier",
+        appUrl: APP_URL,
+      }),
+    ).toEqual({
+      subject: "Platz frei: Erste Hilfe Grundkurs, Sa., 07.11.2026",
+      text:
+        "Hallo Ben Maier,\n\n" +
+        "bei „Erste Hilfe Grundkurs – Tag 1“ am Sa., 07.11.2026, 09:00–17:00 ist ein Instruktor-Platz frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt den Platz.\n\n" +
+        "https://kurse.example.org/termine?termin=t1\n\n" +
+        "Kurseinteilung",
+    });
+  });
+
+  it("speaks of several places when more than one is ausgeschrieben", () => {
+    expect(
+      platzFreiMail({
+        termin: T1,
+        kind: "praxisanleiter",
+        places: 2,
+        name: "Ben Maier",
+        appUrl: APP_URL,
+      }).text,
+    ).toContain(
+      "sind 2 Praxisanleiter-Plätze frei geworden. Du bist dort Backup. Wer zuerst übernimmt, bekommt einen davon.",
+    );
   });
 });

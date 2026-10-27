@@ -540,3 +540,82 @@ describe("auditSentence for Festschreiben", () => {
     ).toBe("Lea Berger hat die Festschreibung aufgehoben");
   });
 });
+
+describe("auditSentence for Ausschreibung", () => {
+  const ausgeschrieben = (places: number, angeschrieben: string[]) =>
+    event(LEA, {
+      type: "place.ausgeschrieben",
+      data: { termin, kind: "instruktor", places, angeschrieben },
+    });
+
+  it("names the held places and who was written to", () => {
+    expect(auditSentence(ausgeschrieben(1, ["Ben Maier", "Clara Ott"]))).toBe(
+      "1 Instruktor-Platz ausgeschrieben, angeschrieben: Ben Maier, Clara Ott",
+    );
+    expect(auditSentence(ausgeschrieben(2, ["Ben Maier"]))).toBe(
+      "2 Instruktor-Plätze ausgeschrieben, angeschrieben: Ben Maier",
+    );
+  });
+
+  it("leaves out the names when the only backup is the actor", () => {
+    expect(auditSentence(ausgeschrieben(1, []))).toBe(
+      "1 Instruktor-Platz ausgeschrieben",
+    );
+  });
+
+  it("says who took the place", () => {
+    expect(
+      auditSentence(
+        event(BEN, {
+          type: "signup.claimed",
+          profileId: BEN.id,
+          data: {
+            termin,
+            personName: BEN.name,
+            from: "backup-instruktor",
+            to: "instruktor",
+          },
+        }),
+      ),
+    ).toBe("Ben Maier hat den Platz übernommen (Backup → Instruktor)");
+  });
+
+  it("keeps the action's own entry on top, whatever order the entries come back in", () => {
+    const removed = event(ANNA, {
+      type: "signup.removed",
+      profileId: ANNA.id,
+      data: { termin, personName: ANNA.name, from: "instruktor", to: null },
+    });
+    const held = event(ANNA, {
+      type: "place.ausgeschrieben",
+      data: {
+        termin,
+        kind: "instruktor",
+        places: 1,
+        angeschrieben: ["Ben Maier"],
+      },
+    });
+    const becameBackup = event(ANNA, {
+      type: "signup.role_changed",
+      profileId: BEN.id,
+      data: {
+        termin,
+        personName: BEN.name,
+        from: "instruktor",
+        to: "backup-instruktor",
+      },
+    });
+
+    expect(historyGroups([held, becameBackup, removed])).toEqual([
+      {
+        actionId: "a1",
+        time: "Sa., 31.10., 14:05",
+        text: "Anna Huber hat sich ausgetragen (Instruktor)",
+        consequences: [
+          "Ben Maier wird Backup (Instruktor)",
+          "1 Instruktor-Platz ausgeschrieben, angeschrieben: Ben Maier",
+        ],
+      },
+    ]);
+  });
+});

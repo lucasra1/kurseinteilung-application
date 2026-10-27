@@ -10,6 +10,7 @@ import {
   adminAddSignup,
   adminMoveSignup,
   adminRemoveSignup,
+  claimPlace,
   signUpSelf,
   withdrawSelf,
 } from "@/lib/dal/signups";
@@ -18,10 +19,10 @@ import { kindSchema, uuidSchema } from "@/lib/validation";
 
 const signupFormSchema = z.object({
   terminId: uuidSchema,
-  intent: z.enum(["eintragen", "abmelden"]),
+  intent: z.enum(["eintragen", "abmelden", "uebernehmen"]),
 });
 
-/** One action for both directions, so the button's form keeps a stable action. */
+/** One action for the trainer's own signup, so the panel's forms keep a stable action. */
 export async function changeSignup(
   _prev: ActionResult,
   formData: FormData,
@@ -32,6 +33,10 @@ export async function changeSignup(
     if (intent === "eintragen") {
       await signUpSelf(terminId, kindSchema.parse(values.kind));
       return "Du bist eingetragen.";
+    }
+    if (intent === "uebernehmen") {
+      await claimPlace(terminId);
+      return "Du hast den Platz übernommen.";
     }
     await withdrawSelf(terminId);
     return "Du bist ausgetragen.";

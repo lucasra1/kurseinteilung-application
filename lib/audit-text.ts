@@ -1,6 +1,7 @@
 // German sentences for Verlauf entries (and later the mails built from them). Pure.
 import {
   type AuditEvent,
+  isConsequence,
   type RoleShift,
   TERMIN_FIELDS,
   type TerminField,
@@ -13,6 +14,7 @@ import {
   KIND_LABEL,
   KINDS,
   kindOf,
+  placesLabel,
   type Role,
 } from "@/lib/staffing";
 import { COORDINATOR } from "@/lib/wording";
@@ -107,6 +109,17 @@ export function auditSentence(event: AuditEvent): string {
     }
     case "signup.role_changed":
       return consequence(event.data);
+    case "signup.claimed": {
+      const { from, to } = event.data;
+      return `${actor} hat den Platz übernommen${roleSuffix(from, to)}`;
+    }
+    case "place.ausgeschrieben": {
+      const { kind, places, angeschrieben } = event.data;
+      const held = `${placesLabel(places, kind)} ausgeschrieben`;
+      return angeschrieben.length > 0
+        ? `${held}, angeschrieben: ${angeschrieben.join(", ")}`
+        : held;
+    }
     case "kurs.created":
       return `${actor} hat den Kurs „${event.data.kursTitle}“ angelegt`;
     // The Termin panel, or the Termin label on the Kurs page, says which Termin.
@@ -232,13 +245,16 @@ function terminLabel(termin: TerminSnapshot, scope: HistoryScope): string {
 }
 
 function group(actionId: string, entries: AuditEvent[]): HistoryGroup {
-  const main =
-    entries.find((e) => e.type !== "signup.role_changed") ?? entries[0];
+  const main = entries.find((e) => !isConsequence(e.type)) ?? entries[0];
+  const rest = entries.filter((e) => e !== main);
+  // Read back, an action's entries have no order: role changes before held places.
+  const roleChanges = rest.filter((e) => e.type === "signup.role_changed");
+  const others = rest.filter((e) => e.type !== "signup.role_changed");
   return {
     actionId,
     time: formatAuditTime(main.createdAt),
     text: auditSentence(main),
-    consequences: entries.filter((e) => e !== main).map(auditSentence),
+    consequences: [...roleChanges, ...others].map(auditSentence),
   };
 }
 

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { requireAdmin, requireUser } from "@/lib/dal/auth";
 import {
   appendSignup,
+  claimHeldPlace,
   lockedTermin,
   mutateStaffing,
   removeSignup,
@@ -43,6 +44,24 @@ export async function withdrawSelf(terminId: string): Promise<void> {
       const termin = lockedTermin(termine, terminId);
       if (isPastDate(termin.date)) throw new DomainError("termin-vorbei");
       await removeSignup(tx, termin.id, user.id);
+    },
+  });
+}
+
+/** "Platz übernehmen": a backup takes an ausgeschriebenen place of their role. */
+export async function claimPlace(terminId: string): Promise<void> {
+  const user = await requireUser();
+  await mutateStaffing({
+    action: {
+      type: "signup.claimed",
+      actor: user,
+      target: { terminId, profileId: user.id },
+    },
+    terminIds: async () => [terminId],
+    run: async (tx, termine) => {
+      const termin = lockedTermin(termine, terminId);
+      if (isPastDate(termin.date)) throw new DomainError("termin-vorbei");
+      await claimHeldPlace(tx, termin, user.id);
     },
   });
 }

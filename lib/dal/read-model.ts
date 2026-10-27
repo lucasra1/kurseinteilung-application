@@ -54,9 +54,12 @@ export type TerminView<S = SignupView> = {
   location: string | null;
   instruktorenNeeded: number;
   praxisanleiterNeeded: number;
+  /** Fixed places held for the backups (`ausgeschrieben(termin, kind)`); they count as missing. */
+  instruktorenAusgeschrieben: number;
+  praxisanleiterAusgeschrieben: number;
   /** In signup order. */
   signups: S[];
-  /** Free fixed places per kind. */
+  /** Free fixed places per kind, ausgeschriebene included. */
   missing: Missing;
   /** Every fixed place is taken. */
   isStaffed: boolean;
@@ -181,6 +184,8 @@ async function loadKursViews(
           location: termin.location,
           instruktorenNeeded: termin.instruktorenNeeded,
           praxisanleiterNeeded: termin.praxisanleiterNeeded,
+          instruktorenAusgeschrieben: termin.instruktorenAusgeschrieben,
+          praxisanleiterAusgeschrieben: termin.praxisanleiterAusgeschrieben,
           signups: ranked,
           missing,
           isStaffed: missing.instruktor + missing.praxisanleiter === 0,
