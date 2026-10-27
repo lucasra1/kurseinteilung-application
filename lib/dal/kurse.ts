@@ -52,7 +52,7 @@ export async function updateKurs(id: string, input: KursInput): Promise<void> {
 export async function deleteKurs(id: string): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: { type: "kurs.deleted", actor: admin, target: { kursId: id } },
     terminIds: (tx) => terminIdsOfKurs(tx, id),
     run: async (tx) => {
       const [deleted] = await tx
@@ -84,7 +84,7 @@ export async function updateTermin(
 ): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: { type: "termin.updated", actor: admin, target: { terminId: id } },
     terminIds: async () => [id],
     run: async (tx, locked) => {
       lockedTermin(locked, id);
@@ -96,7 +96,7 @@ export async function updateTermin(
 export async function deleteTermin(id: string): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: { type: "termin.deleted", actor: admin, target: { terminId: id } },
     terminIds: async () => [id],
     run: async (tx, locked) => {
       lockedTermin(locked, id);

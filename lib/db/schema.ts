@@ -5,6 +5,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   pgSchema,
   text,
   time,
@@ -13,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { authUsers } from "drizzle-orm/supabase";
+import type { AuditType } from "@/lib/audit";
 
 export const appSchema = pgSchema("app");
 
@@ -86,6 +88,35 @@ export const signups = appSchema.table(
     index().on(t.terminId, t.position),
     index().on(t.profileId),
     check("signups_position_check", sql`${t.position} >= 1`),
+  ],
+);
+
+/**
+ * The Verlauf; types and `data` shapes in lib/audit.ts. No foreign keys, so entries outlive
+ * the Termine, Kurse and people they describe.
+ */
+export const auditEvents = appSchema.table(
+  "audit_events",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    /** Shared by all entries of one action. */
+    actionId: uuid().notNull(),
+    actorId: uuid(),
+    /** The actor's name at the time of the action. */
+    actorName: text().notNull(),
+    type: text().$type<AuditType>().notNull(),
+    terminId: uuid(),
+    kursId: uuid(),
+    /** The person affected. */
+    profileId: uuid(),
+    data: jsonb().notNull().default({}),
+  },
+  (t) => [
+    index().on(t.terminId, t.createdAt),
+    index().on(t.kursId, t.createdAt),
+    index().on(t.profileId, t.createdAt),
+    index().on(t.actorId, t.createdAt),
   ],
 );
 

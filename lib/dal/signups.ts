@@ -16,7 +16,11 @@ import { type Kind, sortByPosition } from "@/lib/staffing";
 export async function signUpSelf(terminId: string, kind: Kind): Promise<void> {
   const user = await requireUser();
   await mutateStaffing({
-    actorId: user.id,
+    action: {
+      type: "signup.created",
+      actor: user,
+      target: { terminId, profileId: user.id },
+    },
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       const termin = lockedTermin(termine, terminId);
@@ -29,7 +33,11 @@ export async function signUpSelf(terminId: string, kind: Kind): Promise<void> {
 export async function withdrawSelf(terminId: string): Promise<void> {
   const user = await requireUser();
   await mutateStaffing({
-    actorId: user.id,
+    action: {
+      type: "signup.removed",
+      actor: user,
+      target: { terminId, profileId: user.id },
+    },
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       const termin = lockedTermin(termine, terminId);
@@ -53,7 +61,11 @@ export async function adminAddSignup(
     .where(eq(profiles.id, profileId));
   if (!person) throw new DomainError("nicht-gefunden");
   await mutateStaffing({
-    actorId: admin.id,
+    action: {
+      type: "signup.created",
+      actor: admin,
+      target: { terminId, profileId },
+    },
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       await appendSignup(tx, lockedTermin(termine, terminId), profileId, kind);
@@ -67,7 +79,11 @@ export async function adminRemoveSignup(
 ): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: {
+      type: "signup.removed",
+      actor: admin,
+      target: { terminId, profileId },
+    },
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       await removeSignup(tx, lockedTermin(termine, terminId).id, profileId);
@@ -83,7 +99,12 @@ export async function adminMoveSignup(
 ): Promise<void> {
   const admin = await requireAdmin();
   await mutateStaffing({
-    actorId: admin.id,
+    action: {
+      type: "signup.moved",
+      actor: admin,
+      target: { terminId, profileId },
+      direction,
+    },
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
       lockedTermin(termine, terminId);

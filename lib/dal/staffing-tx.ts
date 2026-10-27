@@ -1,5 +1,12 @@
 import "server-only";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import {
+  type StaffingAction,
+  type StaffingTermin,
+  staffingEvents,
+  type TerminState,
+} from "@/lib/audit";
+import { logEvents } from "@/lib/dal/audit";
 import { isPastDate } from "@/lib/dates";
 import { db, type Tx } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
@@ -18,17 +25,7 @@ import {
   rankSignups,
 } from "@/lib/staffing";
 
-export type LockedTermin = {
-  id: string;
-  kursId: string;
-  kursTitle: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  topic: string;
-  instruktorenNeeded: number;
-  praxisanleiterNeeded: number;
-};
+export type LockedTermin = StaffingTermin;
 
 type SignupRow = {
   terminId: string;
@@ -65,6 +62,7 @@ async function loadTermine(
       startTime: termine.startTime,
       endTime: termine.endTime,
       topic: termine.topic,
+      location: termine.location,
       instruktorenNeeded: termine.instruktorenNeeded,
       praxisanleiterNeeded: termine.praxisanleiterNeeded,
     })
@@ -107,6 +105,48 @@ function rankedByTermin(
   );
 }
 
+function states(
+  termineById: Map<string, LockedTermin>,
+  ranked: ReturnType<typeof rankedByTermin>,
+): TerminState[] {
+  return [...termineById.values()].map((termin) => ({
+    termin,
+    signups: ranked.get(termin.id) ?? [],
+  }));
+}
+
+/**
+ * Names the Verlauf needs that may be gone after `run`: the target person if they're on
+ * none of the Termine, the target Kurs if it has none.
+ */
+async function targetNames(
+  tx: Tx,
+  action: StaffingAction,
+  ids: string[],
+  signupsBefore: SignupRow[],
+): Promise<{ targetName?: string; kursTitle?: string }> {
+  const { target } = action;
+  const names: { targetName?: string; kursTitle?: string } = {};
+  if (
+    "profileId" in target &&
+    !signupsBefore.some((s) => s.profileId === target.profileId)
+  ) {
+    const [person] = await tx
+      .select({ fullName: profiles.fullName })
+      .from(profiles)
+      .where(eq(profiles.id, target.profileId));
+    names.targetName = person?.fullName;
+  }
+  if ("kursId" in target && ids.length === 0) {
+    const [kurs] = await tx
+      .select({ title: kurse.title })
+      .from(kurse)
+      .where(eq(kurse.id, target.kursId));
+    names.kursTitle = kurs?.title;
+  }
+  return names;
+}
+
 function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
   return new Map(
     [...ranked].map(([terminId, list]) => [
@@ -119,26 +159,38 @@ function snapshot(ranked: ReturnType<typeof rankedByTermin>): RoleSnapshot {
 /**
  * Runs a change to the signups of some Termine in one transaction: locks the Termin rows
  * first (in id order, so concurrent changes queue up instead of deadlocking), diffs roles
- * before and after, and sends notifications after the commit.
+ * before and after, writes the Verlauf for `action` (see lib/audit.ts) and sends
+ * notifications after the commit.
  */
 export async function mutateStaffing<T>(opts: {
-  actorId: string;
+  action: StaffingAction;
   terminIds: (tx: Tx) => Promise<string[]>;
   run: (tx: Tx, termine: Map<string, LockedTermin>) => Promise<T>;
 }): Promise<T> {
+  const { action } = opts;
   const out = await db.transaction(async (tx) => {
     const ids = [...new Set(await opts.terminIds(tx))].sort();
     const before = await loadTermine(tx, ids, true);
     const signupsBefore = await loadSignups(tx, ids);
+    const names = await targetNames(tx, action, ids, signupsBefore);
 
     const result = await opts.run(tx, before);
 
     const after = await loadTermine(tx, ids, false);
     const signupsAfter = await loadSignups(tx, ids);
+    const rankedBefore = rankedByTermin(before, signupsBefore);
     const rankedAfter = rankedByTermin(after, signupsAfter);
-    const changes = diffRoles(
-      snapshot(rankedByTermin(before, signupsBefore)),
-      snapshot(rankedAfter),
+    const changes = diffRoles(snapshot(rankedBefore), snapshot(rankedAfter));
+
+    await logEvents(
+      tx,
+      action.actor,
+      staffingEvents({
+        action,
+        before: states(before, rankedBefore),
+        after: states(after, rankedAfter),
+        ...names,
+      }),
     );
 
     const changedIds = [...new Set(changes.map((c) => c.profileId))];
@@ -188,7 +240,7 @@ export async function mutateStaffing<T>(opts: {
   );
 
   await sendStaffingNotifications(enriched, {
-    actorId: opts.actorId,
+    actorId: action.actor.id,
     terminStateAfter,
   });
   return out.result;

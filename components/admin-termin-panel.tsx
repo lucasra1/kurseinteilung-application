@@ -1,12 +1,16 @@
-import { Pencil, Trash2, X } from "lucide-react";
+import { ChevronDown, Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { removeTermin } from "@/app/(app)/kurse/actions";
-import { removeSignupAction } from "@/app/(app)/termine/actions";
+import {
+  moreTerminHistory,
+  removeSignupAction,
+} from "@/app/(app)/termine/actions";
 import {
   type AddPersonOption,
   AddPersonSearch,
 } from "@/components/add-person-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { HistoryList, type HistoryView } from "@/components/history-list";
 import { MoveButtons } from "@/components/move-buttons";
 import { Avatar, kursLabel, StatusChip } from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
@@ -30,14 +34,16 @@ type Person = Qualifications & {
   upcomingSignups: number;
 };
 
-/** The Termin panel for admins: contacts, order per role, adding and removing people. */
+/** The Termin panel for admins: contacts, order per role, adding and removing people, Verlauf. */
 export function AdminTerminPanel({
   termin,
   people,
+  history,
   closeHref,
 }: {
   termin: TerminView<AdminSignupView>;
   people: Person[];
+  history: HistoryView;
   closeHref: string;
 }) {
   const signedUp = new Set(termin.signups.map((s) => s.profileId));
@@ -117,6 +123,24 @@ export function AdminTerminPanel({
         {addOptions.length > 0 && (
           <AddPersonSearch terminId={termin.id} options={addOptions} />
         )}
+
+        {/* Server-rendered, so its open state survives the refresh after a change. */}
+        <details className="group border-t pt-4">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-semibold [&::-webkit-details-marker]:hidden">
+            Verlauf
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <div className="pt-2">
+            <HistoryList
+              key={history.groups[0]?.actionId ?? "leer"}
+              initial={history}
+              loadMore={moreTerminHistory.bind(null, termin.id)}
+            />
+          </div>
+        </details>
       </div>
     </TerminPanel>
   );
