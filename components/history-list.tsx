@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import type { DataResult } from "@/lib/action-result";
@@ -7,7 +8,7 @@ import type { HistoryView } from "@/lib/audit-text";
 
 /**
  * Verlauf entries, newest first, with what followed from each action indented below and,
- * outside the Termin panel, the Termin each is about.
+ * outside the Termin panel, what each is about (linked on the Verlauf page).
  * "Mehr anzeigen" appends older entries. Render with a `key` that changes when new
  * entries arrive, so appended pages don't outlive a refresh.
  */
@@ -35,14 +36,23 @@ export function HistoryList({
     <div className="flex flex-col items-start gap-3">
       <ol className="flex flex-col gap-2.5 text-sm">
         {groups.map((group) => (
-          <li key={`${group.actionId}:${group.termin?.id ?? ""}`}>
-            {group.termin ? (
+          <li key={`${group.actionId}:${group.about?.id ?? ""}`}>
+            {group.about ? (
               <>
                 <p>
                   <span className="font-semibold">{group.time}</span> ·{" "}
-                  <span className="text-muted-foreground">
-                    {group.termin.label}
-                  </span>
+                  {group.about.href ? (
+                    <Link
+                      href={group.about.href}
+                      className="text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                    >
+                      {group.about.label}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {group.about.label}
+                    </span>
+                  )}
                 </p>
                 <p>{group.text}</p>
               </>
