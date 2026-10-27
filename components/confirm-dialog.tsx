@@ -1,8 +1,13 @@
 "use client";
 
-import { type ReactNode, useActionState, useState } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useActionState,
+  useId,
+  useState,
+} from "react";
 import { confirmationOf, FormMessage } from "@/components/form-message";
-import { SubmitButton } from "@/components/submit-button";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -19,6 +24,57 @@ import type { ActionResult } from "@/lib/action-result";
 /** "Trotzdem austragen" for "Austragen". */
 function insist(label: string): string {
   return `Trotzdem ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+}
+
+/**
+ * A confirmation's content: `text` under `title`, then Abbrechen and the button that submits
+ * the form `formId`. After a Warndialog text (`warned`) it reads "Trotzdem …" and sends
+ * `bestaetigt=1`.
+ */
+export function ConfirmContent({
+  title,
+  text,
+  confirmLabel,
+  warned,
+  formId,
+  pending,
+  variant,
+  children,
+}: {
+  title: string;
+  text: string;
+  confirmLabel: string;
+  warned: boolean;
+  formId: string;
+  pending: boolean;
+  variant?: ComponentProps<typeof Button>["variant"];
+  /** Between the text and the buttons. */
+  children?: ReactNode;
+}) {
+  return (
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>{title}</AlertDialogTitle>
+        <AlertDialogDescription className="whitespace-pre-line">
+          {text}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      {children}
+      <AlertDialogFooter>
+        <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+        <Button
+          type="submit"
+          form={formId}
+          variant={variant}
+          disabled={pending}
+          name={warned ? "bestaetigt" : undefined}
+          value={warned ? "1" : undefined}
+        >
+          {warned ? insist(confirmLabel) : confirmLabel}
+        </Button>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  );
 }
 
 /**
@@ -58,9 +114,10 @@ export function ConfirmDialog({
   iconOnly?: boolean;
   triggerClassName?: string;
 }) {
+  const formId = useId();
   const [open, setOpen] = useState(false);
   const [serverWarning, setServerWarning] = useState<string | null>(null);
-  const [result, formAction] = useActionState(
+  const [result, formAction, pending] = useActionState(
     async (prev: ActionResult, formData: FormData) => {
       const next = await action(prev, formData);
       if (next?.ok) setOpen(false);
@@ -93,27 +150,22 @@ export function ConfirmDialog({
         {triggerIcon}
         {!iconOnly && triggerLabel}
       </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription className="whitespace-pre-line">
-            {shown ?? description}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+      <ConfirmContent
+        title={title}
+        text={shown ?? description}
+        confirmLabel={confirmLabel}
+        warned={Boolean(shown)}
+        formId={formId}
+        pending={pending}
+        variant={variant}
+      >
         <FormMessage result={result} />
-        <AlertDialogFooter>
-          <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-          <form action={formAction}>
-            {Object.entries(fields).map(([name, value]) => (
-              <input key={name} type="hidden" name={name} value={value} />
-            ))}
-            {shown && <input type="hidden" name="bestaetigt" value="1" />}
-            <SubmitButton variant={variant} className="w-full">
-              {shown ? insist(confirmLabel) : confirmLabel}
-            </SubmitButton>
-          </form>
-        </AlertDialogFooter>
-      </AlertDialogContent>
+        <form id={formId} action={formAction} hidden>
+          {Object.entries(fields).map(([name, value]) => (
+            <input key={name} type="hidden" name={name} value={value} />
+          ))}
+        </form>
+      </ConfirmContent>
     </AlertDialog>
   );
 }

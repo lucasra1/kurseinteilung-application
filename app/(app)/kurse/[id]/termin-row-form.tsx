@@ -4,20 +4,12 @@ import { Check, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { removeTermin, saveTermin } from "@/app/(app)/kurse/actions";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ConfirmContent, ConfirmDialog } from "@/components/confirm-dialog";
 import { confirmationOf, FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import { StatusChip } from "@/components/termin-bits";
 import { TerminFields, type TerminValues } from "@/components/termin-fields";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import type { ActionResult } from "@/lib/action-result";
 import type { Missing, Role } from "@/lib/staffing";
@@ -139,27 +131,15 @@ export function TerminRowForm({
         open={warning.open}
         onOpenChange={(open) => setWarning((was) => ({ ...was, open }))}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{rowLabel} speichern?</AlertDialogTitle>
-            <AlertDialogDescription className="whitespace-pre-line">
-              {warning.text}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-            {/* Sends the row's form again, now confirmed. */}
-            <Button
-              type="submit"
-              form={formId}
-              name="bestaetigt"
-              value="1"
-              disabled={pending}
-            >
-              Trotzdem speichern
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+        {/* Sends the row's form again, now confirmed. */}
+        <ConfirmContent
+          title={`${rowLabel} speichern?`}
+          text={warning.text}
+          confirmLabel="Speichern"
+          warned
+          formId={formId}
+          pending={pending}
+        />
       </AlertDialog>
     </li>
   );
