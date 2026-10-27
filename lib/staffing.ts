@@ -108,6 +108,22 @@ export function nextRole(
   return taken < needed(s, kind) ? kind : `backup-${kind}`;
 }
 
+/**
+ * Whether `profileId` is a backup of a role with an ausgeschriebenen place on the Termin,
+ * so they can take it (Platz übernehmen, or a coordinator's Platz geben).
+ */
+export function canClaimPlace(
+  termin: Staffing & { signups: { profileId: string; role: Role }[] },
+  profileId: string,
+): boolean {
+  const signup = termin.signups.find((s) => s.profileId === profileId);
+  return (
+    !!signup &&
+    isBackup(signup.role) &&
+    ausgeschrieben(termin, kindOf(signup.role)) > 0
+  );
+}
+
 /** Free fixed places per kind. */
 export type Missing = Record<Kind, number>;
 
@@ -122,6 +138,24 @@ export function missingPlaces(signups: { role: Role }[], s: Needed): Missing {
     instruktor: free("instruktor"),
     praxisanleiter: free("praxisanleiter"),
   };
+}
+
+/**
+ * Whether a Termin belongs under "Wo du gebraucht wirst" for `viewer`, given ranked
+ * signups: a free fixed place of a role they're qualified for while they aren't on it yet,
+ * or an ausgeschriebener place of the role they're backup for.
+ */
+export function needsViewer(
+  termin: Staffing & { signups: { profileId: string; role: Role }[] },
+  viewer: Qualifications & { id: string },
+): boolean {
+  if (termin.signups.some((s) => s.profileId === viewer.id)) {
+    return canClaimPlace(termin, viewer.id);
+  }
+  const missing = missingPlaces(termin.signups, termin);
+  return KINDS.some(
+    (kind) => missing[kind] > 0 && hasQualification(viewer, kind),
+  );
 }
 
 /** "2 Instruktoren fehlen", "1 Instruktor, 1 Praxisanleiter fehlen" or "Voll besetzt". */

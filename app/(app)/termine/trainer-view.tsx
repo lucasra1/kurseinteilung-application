@@ -9,7 +9,7 @@ import { WithPanel } from "@/components/with-panel";
 import type { CurrentUser } from "@/lib/dal/auth";
 import { findTermin, getUpcomingTermine } from "@/lib/dal/read-model";
 import { groupByMonth } from "@/lib/dates";
-import { hasQualification, KINDS } from "@/lib/staffing";
+import { needsViewer } from "@/lib/staffing";
 import { hrefWith } from "@/lib/url";
 
 /** Trainers: where they are needed first, everything else one tap away. */
@@ -21,13 +21,7 @@ export async function TrainerView({
   query: { ansicht?: string; termin?: string };
 }) {
   const termine = await getUpcomingTermine();
-  // A free fixed place in one of the viewer's qualifications, and not signed up yet.
-  const needed = termine.filter(
-    (t) =>
-      KINDS.some(
-        (kind) => t.missing[kind] > 0 && hasQualification(user, kind),
-      ) && !t.signups.some((s) => s.profileId === user.id),
-  );
+  const needed = termine.filter((t) => needsViewer(t, user));
   const showAll = query.ansicht === "alle";
   const visible = showAll ? termine : needed;
   const selected = query.termin

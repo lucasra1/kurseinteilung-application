@@ -150,6 +150,22 @@ export function RoleChip({
   );
 }
 
+export const CLAIM_LABEL = "Platz frei – übernehmen";
+
+/** For a backup of a role with an ausgeschriebenen place: the place is theirs to take. */
+export function ClaimChip({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center rounded-full bg-brand-100 px-2.5 text-xs font-semibold whitespace-nowrap text-brand-700",
+        className,
+      )}
+    >
+      {CLAIM_LABEL}
+    </span>
+  );
+}
+
 /** Taken and free fixed places per needed role as dots, plus the number of backups. */
 export function SlotDots({ termin }: { termin: Counts }) {
   const backups = termin.signups.filter((s) => isBackup(s.role)).length;
