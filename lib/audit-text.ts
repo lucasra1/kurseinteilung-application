@@ -9,6 +9,7 @@ import {
   TERMIN_FIELDS,
   type TerminField,
   type TerminSnapshot,
+  terminOf,
 } from "@/lib/audit";
 import { formatDate, formatTime } from "@/lib/dates";
 import {
@@ -273,10 +274,6 @@ function groupBy<K, T>(items: T[], keyOf: (item: T) => K): Map<K, T[]> {
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
   return groups;
-}
-
-function terminOf(event: AuditEvent): TerminSnapshot | undefined {
-  return "termin" in event.data ? event.data.termin : undefined;
 }
 
 /** "Tag 1, Sa., 07.11.2026"; outside the Kurs page also the Kurs: "Erste Hilfe – Tag 1, …" */

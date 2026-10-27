@@ -146,6 +146,13 @@ export type KursChanges = Partial<Record<keyof KursFields, [string, string]>>;
 
 export type AuditType = keyof AuditData;
 
+/** The Termin an entry is about, as it was then; none for a Kurs or person alone. */
+export function terminOf(entry: {
+  data: AuditData[AuditType];
+}): TerminSnapshot | undefined {
+  return "termin" in entry.data ? entry.data.termin : undefined;
+}
+
 const CONSEQUENCES: ReadonlySet<AuditType> = new Set([
   "signup.role_changed",
   "place.ausgeschrieben",

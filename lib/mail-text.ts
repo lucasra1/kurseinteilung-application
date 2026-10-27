@@ -8,6 +8,7 @@ import {
   ausgeschriebenTo,
   type TerminSnapshot,
   type TerminState,
+  terminOf,
 } from "@/lib/audit";
 import { auditSentence, qualifiedCount } from "@/lib/audit-text";
 import { formatDate, formatTerminWhen } from "@/lib/dates";
@@ -27,6 +28,21 @@ export type MailText = { subject: string; text: string };
 
 /** Ends every staffing mail. */
 export const SIGNATURE = "\n\nKurseinteilung";
+
+/** „Erste Hilfe Grundkurs – Tag 1“ */
+function terminName(termin: TerminSnapshot): string {
+  return `„${termin.kursTitle} – ${termin.topic}“`;
+}
+
+/** The Termin in a subject, after the colon: "Erste Hilfe Grundkurs, Sa., 07.11.2026" */
+function subjectAt(termin: TerminSnapshot): string {
+  return `${termin.kursTitle}, ${formatDate(termin.date)}`;
+}
+
+/** Opens every mail to one person. */
+function greeting(name: string): string {
+  return `Hallo ${name},\n\n`;
+}
 
 /** One Termin of the action: its main entry, then the consequences, in the action's order. */
 type Block = {
@@ -58,15 +74,14 @@ function asEvent(entry: AuditEntry, actor: Actor): AuditEvent {
 function blocks(entries: AuditEntry[]): Block[] {
   const byTermin = new Map<string, Block>();
   for (const entry of entries) {
-    if (!entry.terminId || !("termin" in entry.data) || !entry.data.termin) {
-      continue;
-    }
+    const termin = terminOf(entry);
+    if (!entry.terminId || !termin) continue;
     const block = byTermin.get(entry.terminId);
     if (block) block.consequences.push(entry);
     else {
       byTermin.set(entry.terminId, {
         terminId: entry.terminId,
-        termin: entry.data.termin,
+        termin,
         main: entry,
         consequences: [],
       });
@@ -132,7 +147,7 @@ function consequenceLine(entry: AuditEntry, actor: Actor): string {
 
 /** Names the kind of action; anything without its own subject is "Besetzung geändert". */
 function subject(main: AuditEntry, termin: TerminSnapshot, actor: Actor) {
-  const at = `${termin.kursTitle}, ${formatDate(termin.date)}`;
+  const at = subjectAt(termin);
   switch (main.type) {
     case "signup.created":
       return `Eintragung: ${at}`;
@@ -172,22 +187,28 @@ export type ActionMailInput = {
   appUrl: string;
 };
 
+/** The entries about Termine that aren't past: the only ones mailed about. */
+function upcoming(input: ActionMailInput): AuditEntry[] {
+  return input.entries.filter((entry) => {
+    const termin = terminOf(entry);
+    return termin !== undefined && termin.date >= input.today;
+  });
+}
+
 /**
  * The mail to the Praxisanleiterkoordinator:innen about one staffing action: per Termin the
  * action, its consequences as "– …" lines, the Stand afterwards and a link.
  */
 export function adminMail(input: ActionMailInput): MailText | null {
   const { actor } = input;
-  const list = blocks(input.entries).filter(
-    (block) => block.termin.date >= input.today && changesStaffing(block),
-  );
+  const list = blocks(upcoming(input)).filter(changesStaffing);
   const [first] = list;
   if (!first) return null;
 
   const text = list.map((block) => {
     const now = input.after.find((s) => s.termin.id === block.terminId);
     const paragraphs = [
-      `„${block.termin.kursTitle} – ${block.termin.topic}“ am ${formatTerminWhen(block.termin)}\n` +
+      `${terminName(block.termin)} am ${formatTerminWhen(block.termin)}\n` +
         `${auditSentence(asEvent(block.main, actor))}.`,
     ];
     if (block.consequences.length > 0) {
@@ -225,10 +246,10 @@ export type PlaceMailInput = {
 export function platzFreiMail(input: PlaceMailInput): MailText {
   const { termin, kind, places } = input;
   return {
-    subject: `Platz frei: ${termin.kursTitle}, ${formatDate(termin.date)}`,
+    subject: `Platz frei: ${subjectAt(termin)}`,
     text:
-      `Hallo ${input.name},\n\n` +
-      `du bist Backup bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)}. ${placesFreedText(kind, places)}\n\n` +
+      greeting(input.name) +
+      `du bist Backup bei ${terminName(termin)} am ${formatTerminWhen(termin)}. ${placesFreedText(kind, places)}\n\n` +
       `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }
@@ -241,10 +262,10 @@ export function gebrauchtMail(input: PlaceMailInput): MailText {
       ? `fehlt ein ${KIND_LABEL[kind].one}`
       : `fehlen ${places} ${KIND_LABEL[kind].many}`;
   return {
-    subject: `Du wirst gebraucht: ${termin.kursTitle}, ${formatDate(termin.date)}`,
+    subject: `Du wirst gebraucht: ${subjectAt(termin)}`,
     text:
-      `Hallo ${input.name},\n\n` +
-      `bei „${termin.kursTitle} – ${termin.topic}“ am ${formatTerminWhen(termin)} ${missing}. Wenn du Zeit hast, trag dich ein.\n\n` +
+      greeting(input.name) +
+      `bei ${terminName(termin)} am ${formatTerminWhen(termin)} ${missing}. Wenn du Zeit hast, trag dich ein.\n\n` +
       `${input.appUrl}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }
@@ -258,26 +279,26 @@ export function betroffeneMail(input: {
   appUrl: string;
 }): MailText {
   const { termin, from, to } = input;
-  const what = `„${termin.kursTitle} – ${termin.topic}“`;
+  const what = terminName(termin);
   const when = formatTerminWhen(termin);
-  const at = `${termin.kursTitle}, ${formatDate(termin.date)}`;
-  const greeting = `Hallo ${input.name},\n\n`;
+  const at = subjectAt(termin);
+  const hallo = greeting(input.name);
   const link = `\n\n${input.appUrl}/meine${SIGNATURE}`;
   if (from && to) {
     return {
       subject: `Neue Rolle: ${at}`,
-      text: `${greeting}deine Rolle für ${what} am ${when} hat sich geändert: ${ROLE_LABEL[from]} → ${ROLE_LABEL[to]}.${link}`,
+      text: `${hallo}deine Rolle für ${what} am ${when} hat sich geändert: ${ROLE_LABEL[from]} → ${ROLE_LABEL[to]}.${link}`,
     };
   }
   if (to) {
     return {
       subject: `Eingetragen: ${at}`,
-      text: `${greeting}du wurdest für ${what} am ${when} als ${ROLE_LABEL[to]} eingetragen.${link}`,
+      text: `${hallo}du wurdest für ${what} am ${when} als ${ROLE_LABEL[to]} eingetragen.${link}`,
     };
   }
   return {
     subject: `Ausgetragen: ${at}`,
-    text: `${greeting}du wurdest von ${what} am ${when} ausgetragen.${link}`,
+    text: `${hallo}du wurdest von ${what} am ${when} ausgetragen.${link}`,
   };
 }
 
@@ -292,14 +313,6 @@ export type StaffingMail = MailText &
     | { group: Exclude<MailGroup, "admins">; profileId: string }
     | { group: "admins" }
   );
-
-/** The entries about Termine that aren't past: the only ones mailed about. */
-function upcoming(input: ActionMailInput): AuditEntry[] {
-  return input.entries.filter(
-    (e) =>
-      "termin" in e.data && e.data.termin && e.data.termin.date >= input.today,
-  );
-}
 
 const PLACE_MAIL = {
   "platz-frei": { type: "place.ausgeschrieben", compose: platzFreiMail },
@@ -368,9 +381,10 @@ function betroffeneMails(input: ActionMailInput): StaffingMail[] {
   ]);
   return inSignupOrder(input, upcoming(input)).flatMap((entry) => {
     const { profileId, data } = entry;
-    if (!profileId || skip.has(profileId)) return [];
-    if (!("from" in data) || data.from === data.to || !data.termin) return [];
-    const { termin, personName, from, to } = data;
+    const termin = terminOf(entry);
+    if (!profileId || skip.has(profileId) || !termin) return [];
+    if (!("from" in data) || data.from === data.to) return [];
+    const { personName, from, to } = data;
     const mail = betroffeneMail({ termin, name: personName, from, to, appUrl });
     return [{ group: "betroffene" as const, profileId, ...mail }];
   });
