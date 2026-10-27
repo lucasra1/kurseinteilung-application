@@ -55,8 +55,9 @@ async function InviteContent({
           Schön, dass du dabei bist!
         </h1>
         <p className="text-[15px] leading-relaxed text-muted-foreground">
-          Du wurdest eingeladen, Kurse als Trainer oder Backup zu übernehmen.
-          Trag dich einmal ein, dann suchst du dir deine Termine selbst aus.
+          Du wurdest eingeladen, bei Kursen als Instruktor oder Praxisanleiter
+          mitzumachen. Trag dich einmal ein, dann suchst du dir deine Termine
+          selbst aus.
         </p>
       </div>
       <ol className="grid grid-cols-3 gap-2">

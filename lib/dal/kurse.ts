@@ -38,21 +38,15 @@ export async function createKursWithTermine(
   });
 }
 
-/** Staffing numbers can change roles in every Termin of the Kurs, so this goes through mutateStaffing. */
+/** Title and description don't affect roles: a plain update. */
 export async function updateKurs(id: string, input: KursInput): Promise<void> {
-  const admin = await requireAdmin();
-  await mutateStaffing({
-    actorId: admin.id,
-    terminIds: (tx) => terminIdsOfKurs(tx, id),
-    run: async (tx) => {
-      const [updated] = await tx
-        .update(kurse)
-        .set(input)
-        .where(eq(kurse.id, id))
-        .returning({ id: kurse.id });
-      if (!updated) throw new DomainError("nicht-gefunden");
-    },
-  });
+  await requireAdmin();
+  const [updated] = await db
+    .update(kurse)
+    .set(input)
+    .where(eq(kurse.id, id))
+    .returning({ id: kurse.id });
+  if (!updated) throw new DomainError("nicht-gefunden");
 }
 
 export async function deleteKurs(id: string): Promise<void> {
@@ -83,18 +77,20 @@ export async function createTermin(
   await db.insert(termine).values({ ...input, kursId });
 }
 
-/** Date, time, topic and location don't affect roles: a plain update. */
+/** The staffing numbers decide who holds a fixed place, so this goes through mutateStaffing. */
 export async function updateTermin(
   id: string,
   input: TerminInput,
 ): Promise<void> {
-  await requireAdmin();
-  const [updated] = await db
-    .update(termine)
-    .set(input)
-    .where(eq(termine.id, id))
-    .returning({ id: termine.id });
-  if (!updated) throw new DomainError("nicht-gefunden");
+  const admin = await requireAdmin();
+  await mutateStaffing({
+    actorId: admin.id,
+    terminIds: async () => [id],
+    run: async (tx, locked) => {
+      lockedTermin(locked, id);
+      await tx.update(termine).set(input).where(eq(termine.id, id));
+    },
+  });
 }
 
 export async function deleteTermin(id: string): Promise<void> {

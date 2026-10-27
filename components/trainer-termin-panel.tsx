@@ -1,35 +1,49 @@
 import { CalendarDays, Clock, MapPin, Plus } from "lucide-react";
 import type { ReactNode } from "react";
-import { SignupCta, type SignupCtaProps } from "@/components/signup-cta";
+import {
+  SignupCta,
+  type SignupCtaProps,
+  type SignupOption,
+} from "@/components/signup-cta";
 import { Avatar, kursLabel } from "@/components/termin-bits";
 import { TerminPanel } from "@/components/termin-panel";
 import type { SignupView, TerminView } from "@/lib/dal/read-model";
 import { formatLongDate, formatTimeRange } from "@/lib/dates";
-import { nextRole, ROLE_LABEL, type Role } from "@/lib/staffing";
+import {
+  hasQualification,
+  isBackup,
+  KIND_LABEL,
+  KINDS,
+  type Kind,
+  kindOf,
+  needed,
+  nextRole,
+  type Qualifications,
+  ROLE_LABEL,
+} from "@/lib/staffing";
 import { cn } from "@/lib/utils";
 
-/** The Termin panel as trainers see it: who is in, what is free, one clear action. */
+type Viewer = Qualifications & { id: string };
+
+/** The Termin panel as trainers see it: who is in, what is free, one clear action per role. */
 export function TrainerTerminPanel({
   termin,
-  currentUserId,
+  viewer,
   closeHref,
 }: {
   termin: TerminView;
-  currentUserId: string;
+  viewer: Viewer;
   closeHref: string;
 }) {
-  const mine = termin.signups.find((s) => s.profileId === currentUserId);
-  const openRole =
-    mine || termin.isPast ? null : nextRole(termin.signups.length, termin);
-  const byRole = (role: Role) => termin.signups.filter((s) => s.role === role);
-  const extra = byRole("ueberzaehlig");
+  const mine = termin.signups.find((s) => s.profileId === viewer.id);
+  const options = mine || termin.isPast ? [] : signupOptions(termin, viewer);
 
   return (
     <TerminPanel
       closeHref={closeHref}
       eyebrow={kursLabel(termin)}
       title={termin.topic}
-      footer={<SignupCta {...cta(termin, mine)} />}
+      footer={<SignupCta {...cta(termin, viewer, mine, options)} />}
     >
       <div className="flex flex-col gap-5">
         <ul className="flex flex-col gap-2.5 text-[15px]">
@@ -44,37 +58,45 @@ export function TrainerTerminPanel({
             {termin.kursDescription}
           </p>
         )}
-        <SlotSection
-          title="Trainer"
-          people={byRole("trainer")}
-          total={termin.trainersNeeded}
-          currentUserId={currentUserId}
-          offerFree={openRole === "trainer"}
-        />
-        {(termin.backupsNeeded > 0 || byRole("backup").length > 0) && (
-          <SlotSection
-            title="Backup"
-            people={byRole("backup")}
-            total={termin.backupsNeeded}
-            currentUserId={currentUserId}
-            offerFree={openRole === "backup"}
+        {KINDS.filter((kind) => needed(termin, kind) > 0).map((kind) => (
+          <KindSection
+            key={kind}
+            kind={kind}
+            termin={termin}
+            viewerId={viewer.id}
+            offerFree={options.some((o) => o.kind === kind && o.primary)}
           />
-        )}
-        {extra.length > 0 && (
-          <SlotSection
-            title="Überzählig"
-            people={extra}
-            total={extra.length}
-            currentUserId={currentUserId}
-            offerFree={false}
-          />
-        )}
+        ))}
       </div>
     </TerminPanel>
   );
 }
 
-function cta(termin: TerminView, mine: SignupView | undefined): SignupCtaProps {
+/** One option per role the Termin needs and the viewer is qualified for; free fixed places first. */
+function signupOptions(termin: TerminView, viewer: Viewer): SignupOption[] {
+  const kinds = KINDS.filter(
+    (kind) => needed(termin, kind) > 0 && hasQualification(viewer, kind),
+  );
+  return kinds
+    .map((kind) => {
+      const fixed = !isBackup(nextRole(termin.signups, termin, kind));
+      const label = fixed
+        ? `Als ${KIND_LABEL[kind].one} eintragen`
+        : kinds.length > 1
+          ? `Als Backup (${KIND_LABEL[kind].one}) eintragen`
+          : "Als Backup eintragen";
+      return { kind, label, primary: fixed };
+    })
+    .sort((a, b) => Number(b.primary) - Number(a.primary))
+    .map((option, index) => ({ ...option, primary: index === 0 }));
+}
+
+function cta(
+  termin: TerminView,
+  viewer: Viewer,
+  mine: SignupView | undefined,
+  options: SignupOption[],
+): SignupCtaProps {
   const terminId = termin.id;
   if (mine && termin.isPast) {
     return {
@@ -85,39 +107,51 @@ function cta(termin: TerminView, mine: SignupView | undefined): SignupCtaProps {
     };
   }
   if (mine) {
-    const hint =
-      mine.role === "trainer"
-        ? "Du bist als Trainer eingetragen."
-        : mine.role === "backup"
-          ? `Du bist Backup (Platz ${mine.rank - termin.trainersNeeded}) und rückst nach, wenn ein Trainer ausfällt.`
-          : "Du stehst über der geplanten Besetzung (Überzählig).";
+    const many = KIND_LABEL[mine.kind].many;
+    const hint = isBackup(mine.role)
+      ? `Du bist Backup ${mine.rank - needed(termin, mine.kind)} bei den ${many} und rückst nach, wenn jemand ausfällt.`
+      : `Du bist als ${KIND_LABEL[mine.kind].one} eingetragen.`;
     return { terminId, mode: "austragen", hint };
   }
   if (termin.isPast) {
     return { terminId, mode: "disabled", label: "Termin ist vorbei" };
   }
-  const role = nextRole(termin.signups.length, termin);
-  if (!role) {
+  if (options.length === 0) {
+    const wanted = KINDS.filter((kind) => needed(termin, kind) > 0)
+      .map((kind) => KIND_LABEL[kind].many)
+      .join(" und ");
     return {
       terminId,
       mode: "disabled",
-      label: "Ausgebucht",
-      hint: "Alle Plätze sind vergeben.",
+      label: `Nur für ${wanted}`,
+      hint:
+        hasQualification(viewer, "instruktor") ||
+        hasQualification(viewer, "praxisanleiter")
+          ? "Dafür fehlt dir die passende Qualifikation."
+          : "Bei dir ist noch keine Qualifikation eingetragen. Melde dich bei einem Admin.",
     };
   }
-  const freeTrainers = termin.trainersNeeded - termin.trainerCount;
-  const hint =
-    role === "backup"
-      ? "Alle Trainer-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt."
-      : freeTrainers === 1
-        ? "Du übernimmst den letzten freien Trainer-Platz."
-        : `Noch ${freeTrainers} Trainer-Plätze frei.`;
   return {
     terminId,
     mode: "eintragen",
-    label: `Als ${ROLE_LABEL[role]} eintragen`,
-    hint,
+    options,
+    hint: optionHint(termin, options),
   };
+}
+
+function optionHint(termin: TerminView, options: SignupOption[]): string {
+  if (options.length > 1) {
+    return "Du hast beide Qualifikationen. Wähl, als was du dich einträgst.";
+  }
+  const { kind, primary } = options[0];
+  const { one, many } = KIND_LABEL[kind];
+  if (!primary) {
+    return `Alle ${many}-Plätze sind vergeben. Als Backup rückst du nach, wenn jemand ausfällt.`;
+  }
+  const free = termin.missing[kind];
+  return free === 1
+    ? `Du übernimmst den letzten freien ${one}-Platz.`
+    : `Noch ${free} ${many}-Plätze frei.`;
 }
 
 function MetaLine({
@@ -135,42 +169,40 @@ function MetaLine({
   );
 }
 
-function SlotSection({
-  title,
-  people,
-  total,
-  currentUserId,
+function KindSection({
+  kind,
+  termin,
+  viewerId,
   offerFree,
 }: {
-  title: string;
-  people: SignupView[];
-  total: number;
-  currentUserId: string;
+  kind: Kind;
+  termin: TerminView;
+  viewerId: string;
   /** Highlights the first free place as the one this person would get. */
   offerFree: boolean;
 }) {
-  const free = Math.max(total - people.length, 0);
+  const fixed = termin.signups.filter((s) => s.role === kind);
+  const backups = termin.signups.filter(
+    (s) => isBackup(s.role) && kindOf(s.role) === kind,
+  );
+  const total = needed(termin, kind);
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-[15px] font-semibold">{title}</h3>
+        <h3 className="text-[15px] font-semibold">{KIND_LABEL[kind].many}</h3>
         <span className="text-[13px] text-muted-foreground">
-          {people.length} von {total}
+          {fixed.length} von {total}
         </span>
       </div>
       <ul className="flex flex-col gap-1.5">
-        {people.map((person) => (
-          <li key={person.profileId} className="flex items-center gap-3 py-1">
-            <Avatar name={person.fullName} />
-            <span className="text-[15px]">{person.fullName}</span>
-            {person.profileId === currentUserId && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
-                Du
-              </span>
-            )}
-          </li>
+        {fixed.map((person) => (
+          <PersonRow
+            key={person.profileId}
+            person={person}
+            viewerId={viewerId}
+          />
         ))}
-        {Array.from({ length: free }, (_, i) => {
+        {Array.from({ length: termin.missing[kind] }, (_, i) => {
           const offered = offerFree && i === 0;
           return (
             <li
@@ -206,6 +238,50 @@ function SlotSection({
           );
         })}
       </ul>
+      {backups.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-xl bg-muted/70 px-3 py-2">
+          <span className="text-[13px] font-medium text-muted-foreground">
+            Backups, in dieser Reihenfolge
+          </span>
+          <ol className="flex flex-col gap-1">
+            {backups.map((person) => (
+              <PersonRow
+                key={person.profileId}
+                person={person}
+                viewerId={viewerId}
+                small
+              />
+            ))}
+          </ol>
+        </div>
+      )}
     </section>
+  );
+}
+
+function PersonRow({
+  person,
+  viewerId,
+  small = false,
+}: {
+  person: SignupView;
+  viewerId: string;
+  small?: boolean;
+}) {
+  return (
+    <li className={cn("flex items-center gap-3", small ? "py-0.5" : "py-1")}>
+      <Avatar
+        name={person.fullName}
+        className={small ? "size-7 text-[11px]" : undefined}
+      />
+      <span className={small ? "text-sm" : "text-[15px]"}>
+        {person.fullName}
+      </span>
+      {person.profileId === viewerId && (
+        <span className="rounded-full bg-card px-2 py-0.5 text-xs font-semibold ring-1 ring-border">
+          Du
+        </span>
+      )}
+    </li>
   );
 }

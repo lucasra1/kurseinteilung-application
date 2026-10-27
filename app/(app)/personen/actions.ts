@@ -2,9 +2,9 @@
 
 import { z } from "zod";
 import { type ActionResult, runAction } from "@/lib/action-result";
-import { removePerson, setAdmin } from "@/lib/dal/profiles";
+import { removePerson, setAdmin, setQualification } from "@/lib/dal/profiles";
 import { regenerateInviteToken } from "@/lib/dal/settings";
-import { uuidSchema } from "@/lib/validation";
+import { kindSchema, uuidSchema } from "@/lib/validation";
 
 export async function toggleAdmin(
   _prev: ActionResult,
@@ -15,6 +15,22 @@ export async function toggleAdmin(
       .object({ profileId: uuidSchema, isAdmin: z.enum(["true", "false"]) })
       .parse(Object.fromEntries(formData));
     await setAdmin(profileId, isAdmin === "true");
+  });
+}
+
+export async function toggleQualification(
+  _prev: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const { profileId, kind, value } = z
+      .object({
+        profileId: uuidSchema,
+        kind: kindSchema,
+        value: z.enum(["true", "false"]),
+      })
+      .parse(Object.fromEntries(formData));
+    await setQualification(profileId, kind, value === "true");
   });
 }
 

@@ -6,9 +6,10 @@ import { cache } from "react";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { env } from "@/lib/env";
+import type { Qualifications } from "@/lib/staffing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export type CurrentUser = {
+export type CurrentUser = Qualifications & {
   id: string;
   fullName: string;
   email: string;
@@ -43,6 +44,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     fullName: profile.fullName,
     email: profile.email,
     phone: profile.phone,
+    isInstruktor: profile.isInstruktor,
+    isPraxisanleiter: profile.isPraxisanleiter,
     isAdmin: profile.isAdmin || envAdmin,
     isEnvAdmin: envAdmin,
   };

@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Project
 
-Kurseinteilung: trainers sign up for Kurs-Termine; see `docs/superpowers/specs/2026-10-26-kurseinteilung-design.md` (spec) and `docs/superpowers/plans/2026-10-26-kurseinteilung.md` (plan).
+Kurseinteilung: Instruktoren and Praxisanleiter sign up for Kurs-Termine; see `docs/superpowers/specs/2026-10-26-kurseinteilung-design.md` (spec, roles superseded by `2026-10-27-qualifikationen.md`), `docs/superpowers/specs/2026-10-27-ui-redesign.md` and `docs/superpowers/plans/2026-10-26-kurseinteilung.md` (plan).
 
 - `pnpm dev` / `pnpm build` / `pnpm typecheck` / `pnpm lint` (Biome) / `pnpm format`
 - `pnpm sb:start` / `pnpm sb:stop`: local Supabase in Docker (Mailpit at http://127.0.0.1:54324)

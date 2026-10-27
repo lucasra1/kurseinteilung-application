@@ -1,8 +1,8 @@
 # Kurseinteilung
 
-Trainer:innen tragen sich selbst für Kurs-Termine ein. Ein Admin legt Kurse und Termine an, verschickt einen Einladungslink und sieht auf einen Blick, wo noch Trainer oder Backups fehlen.
+Instruktoren und Praxisanleiter tragen sich selbst für Kurs-Termine ein. Ein Admin legt Kurse und Termine an (je Termin, wie viele Instruktoren und Praxisanleiter gebraucht werden), verschickt einen Einladungslink und sieht auf einen Blick, wo noch jemand fehlt. Wer sich nach den fixen Plätzen einträgt, ist Backup und rückt bei Ausfällen nach.
 
-- Spezifikation: [`docs/superpowers/specs/2026-10-26-kurseinteilung-design.md`](docs/superpowers/specs/2026-10-26-kurseinteilung-design.md)
+- Spezifikation: [`docs/superpowers/specs/2026-10-26-kurseinteilung-design.md`](docs/superpowers/specs/2026-10-26-kurseinteilung-design.md), ergänzt durch [UI-Redesign](docs/superpowers/specs/2026-10-27-ui-redesign.md) und [Qualifikationen](docs/superpowers/specs/2026-10-27-qualifikationen.md)
 - Stack: Next.js 16 (Cache Components), Supabase (Postgres + Magic-Link-Login), Drizzle, Resend, Vercel
 
 ## Lokale Entwicklung

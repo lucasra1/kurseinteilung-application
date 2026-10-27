@@ -1,33 +1,52 @@
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+/** Form values are strings; the counts are parsed on the server. */
 export type TerminValues = {
   date: string;
   startTime: string;
   endTime: string;
   topic: string;
   location: string;
+  instruktorenNeeded: string;
+  praxisanleiterNeeded: string;
 };
 
 /** Desktop column layout shared by the Termin rows and their column headings. */
 export const TERMIN_COLUMNS =
-  "md:grid-cols-[9.5rem_6.5rem_6.5rem_minmax(0,1fr)_9rem]";
+  "md:grid-cols-[9.5rem_6rem_6rem_minmax(0,1fr)_8rem_6.5rem_6.5rem]";
 
 const FIELDS = [
-  { key: "date", label: "Datum", type: "date", span: "" },
-  { key: "startTime", label: "Von", type: "time", span: "" },
-  { key: "endTime", label: "Bis", type: "time", span: "" },
+  { key: "date", label: "Datum", head: "Datum", type: "date", span: "" },
+  { key: "startTime", label: "Von", head: "Von", type: "time", span: "" },
+  { key: "endTime", label: "Bis", head: "Bis", type: "time", span: "" },
   {
     key: "topic",
     label: "Thema",
+    head: "Thema",
     type: "text",
     span: "col-span-2 md:col-span-1",
   },
   {
     key: "location",
     label: "Ort",
+    head: "Ort",
     type: "text",
     span: "col-span-2 md:col-span-1",
+  },
+  {
+    key: "instruktorenNeeded",
+    label: "Instruktoren",
+    head: "Instruktoren",
+    type: "number",
+    span: "",
+  },
+  {
+    key: "praxisanleiterNeeded",
+    label: "Praxisanleiter",
+    head: "Praxisanl.",
+    type: "number",
+    span: "",
   },
 ] as const;
 
@@ -66,6 +85,8 @@ export function TerminFields({
             }
             required={field.key !== "location"}
             placeholder={field.key === "location" ? "optional" : undefined}
+            min={field.type === "number" ? 0 : undefined}
+            max={field.type === "number" ? 50 : undefined}
             className="px-2.5"
           />
         </label>
@@ -86,7 +107,7 @@ export function TerminColumnHeads({ trailing }: { trailing: string }) {
         )}
       >
         {FIELDS.map((field) => (
-          <span key={field.key}>{field.label}</span>
+          <span key={field.key}>{field.head}</span>
         ))}
       </div>
       <span className={trailing} />

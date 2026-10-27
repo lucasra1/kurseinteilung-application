@@ -1,9 +1,9 @@
 import {
   CalendarDays,
   Check,
-  CircleAlert,
+  GraduationCap,
+  HeartPulse,
   Plus,
-  UserRoundPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { AdminTerminPanel } from "@/components/admin-termin-panel";
@@ -20,31 +20,48 @@ import {
   type TerminView,
 } from "@/lib/dal/read-model";
 import { formatTimeRange, formatWeekday, groupByMonth } from "@/lib/dates";
-import type { StaffingStatus } from "@/lib/staffing";
+import { isBackup, KIND_LABEL, type Kind } from "@/lib/staffing";
 import { hrefWith } from "@/lib/url";
 import { cn } from "@/lib/utils";
 import { KursFilter } from "./kurs-filter";
 
-type StatusFilter = StaffingStatus | "offen";
+type StatusFilter =
+  | "offen"
+  | "instruktor-fehlt"
+  | "praxisanleiter-fehlt"
+  | "voll";
 const STATUS_FILTERS: StatusFilter[] = [
   "offen",
-  "trainer-fehlt",
-  "backup-fehlt",
+  "instruktor-fehlt",
+  "praxisanleiter-fehlt",
   "voll",
 ];
 
+function matches(
+  termin: TerminView<AdminSignupView>,
+  status: StatusFilter,
+): boolean {
+  if (status === "offen") return !termin.isStaffed;
+  if (status === "voll") return termin.isStaffed;
+  return (
+    termin.missing[
+      status === "instruktor-fehlt" ? "instruktor" : "praxisanleiter"
+    ] > 0
+  );
+}
+
 const STAT_CARDS = [
   {
-    status: "trainer-fehlt",
-    label: "Trainer fehlt",
-    icon: CircleAlert,
+    status: "instruktor-fehlt",
+    label: "Instruktor fehlt",
+    icon: GraduationCap,
     tone: "bg-brand-100 text-brand-700",
   },
   {
-    status: "backup-fehlt",
-    label: "Backup fehlt",
-    icon: UserRoundPlus,
-    tone: "bg-amber-100 text-amber-800",
+    status: "praxisanleiter-fehlt",
+    label: "Praxisanleiter fehlt",
+    icon: HeartPulse,
+    tone: "bg-brand-100 text-brand-700",
   },
   {
     status: "voll",
@@ -78,16 +95,10 @@ export async function AdminView({
 
   const inKurs = kursId ? all.filter((t) => t.kursId === kursId) : all;
   const upcoming = inKurs.filter((t) => !t.isPast);
-  const countOf = (s: StaffingStatus) =>
-    upcoming.filter((t) => t.status === s).length;
-  const open = upcoming.filter((t) => t.status !== "voll").length;
-  const visible = inKurs.filter((t) =>
-    !status
-      ? true
-      : status === "offen"
-        ? t.status !== "voll"
-        : t.status === status,
-  );
+  const countOf = (s: StatusFilter) =>
+    upcoming.filter((t) => matches(t, s)).length;
+  const open = countOf("offen");
+  const visible = status ? inKurs.filter((t) => matches(t, status)) : inKurs;
 
   const [selected, people] = query.termin
     ? await Promise.all([
@@ -227,15 +238,16 @@ export async function AdminView({
         ) : (
           <section
             aria-label="Terminliste"
-            className="overflow-hidden rounded-2xl border bg-card"
+            className="@container overflow-hidden rounded-2xl border bg-card"
           >
             <div
               aria-hidden="true"
-              className="hidden grid-cols-[3rem_minmax(0,1fr)_7rem_4rem_8.5rem] gap-4 border-b px-4 py-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase md:grid"
+              className="hidden grid-cols-[3rem_minmax(0,1fr)_7rem_7rem_4.5rem_9.5rem] gap-4 border-b px-4 py-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase @4xl:grid"
             >
               <span>Datum</span>
               <span>Termin</span>
-              <span>Trainer</span>
+              <span>Instruktoren</span>
+              <span>Praxisanl.</span>
               <span>Backup</span>
               <span>Status</span>
             </div>
@@ -276,13 +288,13 @@ function AdminTerminRow({
       scroll={false}
       aria-current={selected ? "true" : undefined}
       className={cn(
-        "grid grid-cols-[3rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 border-b px-4 py-3.5 transition-colors outline-none last:border-b-0 hover:bg-zinc-50 focus-visible:bg-zinc-50 md:grid-cols-[3rem_minmax(0,1fr)_7rem_4rem_8.5rem] md:items-center",
+        "grid grid-cols-[3rem_minmax(0,1fr)] gap-x-4 gap-y-2.5 border-b px-4 py-3.5 transition-colors outline-none last:border-b-0 hover:bg-zinc-50 focus-visible:bg-zinc-50 @4xl:grid-cols-[3rem_minmax(0,1fr)_7rem_7rem_4.5rem_9.5rem] @4xl:items-center",
         selected &&
           "bg-brand-50 ring-1 ring-brand-200 ring-inset hover:bg-brand-50",
         termin.isPast && "text-muted-foreground",
       )}
     >
-      <span className="flex flex-col self-start md:self-center">
+      <span className="flex flex-col self-start @4xl:self-center">
         <span className="text-xs font-semibold text-muted-foreground">
           {formatWeekday(termin.date)}
         </span>
@@ -302,25 +314,67 @@ function AdminTerminRow({
           {termin.location && ` · ${termin.location}`}
         </span>
       </span>
-      <span className="col-start-2 flex flex-wrap items-center gap-3 md:contents">
-        <AvatarSlots
-          label="Trainer"
-          people={termin.signups.filter((s) => s.role === "trainer")}
-          total={termin.trainersNeeded}
-        />
-        {termin.backupsNeeded > 0 ? (
-          <AvatarSlots
-            label="Backup"
-            people={termin.signups.filter((s) => s.role === "backup")}
-            total={termin.backupsNeeded}
-          />
-        ) : (
-          <span />
-        )}
-        <span className="ml-auto md:ml-0">
+      <span className="col-start-2 flex flex-wrap items-center gap-3 @4xl:contents">
+        <KindSlots termin={termin} kind="instruktor" />
+        <KindSlots termin={termin} kind="praxisanleiter" />
+        <span className="text-[13px] text-muted-foreground">
+          {backupCount(termin) > 0 ? (
+            <>
+              <span className="@4xl:hidden">Backup </span>+{backupCount(termin)}
+            </>
+          ) : (
+            <span aria-hidden="true" className="hidden @4xl:inline">
+              –
+            </span>
+          )}
+        </span>
+        <span className="ml-auto @4xl:ml-0">
           <StatusChip termin={termin} />
         </span>
       </span>
     </Link>
+  );
+}
+
+function backupCount(termin: TerminView<AdminSignupView>): number {
+  return termin.signups.filter((s) => isBackup(s.role)).length;
+}
+
+/** Avatars and free places of one role; a dash where the Termin doesn't need it. */
+function KindSlots({
+  termin,
+  kind,
+}: {
+  termin: TerminView<AdminSignupView>;
+  kind: Kind;
+}) {
+  const total =
+    kind === "instruktor"
+      ? termin.instruktorenNeeded
+      : termin.praxisanleiterNeeded;
+  if (total === 0) {
+    return (
+      <span
+        aria-hidden="true"
+        className="hidden text-[13px] text-muted-foreground @4xl:inline"
+      >
+        –
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        className="text-xs text-muted-foreground @4xl:hidden"
+      >
+        {KIND_LABEL[kind].many}
+      </span>
+      <AvatarSlots
+        label={KIND_LABEL[kind].many}
+        people={termin.signups.filter((s) => s.role === kind)}
+        total={total}
+      />
+    </span>
   );
 }

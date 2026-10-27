@@ -16,7 +16,7 @@ import {
   type TerminView,
 } from "@/lib/dal/read-model";
 import { formatDaysUntil, formatLongDate, formatTimeRange } from "@/lib/dates";
-import { ROLE_LABEL } from "@/lib/staffing";
+import { isBackup } from "@/lib/staffing";
 import { firstParam, hrefWith } from "@/lib/url";
 
 export default function MeinePage({ searchParams }: PageProps<"/meine">) {
@@ -52,7 +52,7 @@ async function Meine({
           <TrainerTerminPanel
             key={selected.id}
             termin={selected}
-            currentUserId={user.id}
+            viewer={user}
             closeHref={href()}
           />
         )
@@ -119,8 +119,9 @@ async function Meine({
             className="mt-0.5 size-4.5 shrink-0 text-zinc-500"
           />
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Du kannst dich jederzeit austragen. Fällt ein Trainer aus, rückt das
-            erste Backup automatisch nach und bekommt eine E-Mail.
+            Du kannst dich jederzeit austragen. Fällt jemand aus, rückt das
+            erste Backup derselben Rolle automatisch nach und bekommt eine
+            E-Mail.
           </p>
         </div>
       </div>
@@ -140,8 +141,12 @@ function NextTermin({
   const me = termin.signups.find((s) => s.profileId === currentUserId);
   if (!me) return null;
   const others = termin.signups.filter((s) => s.profileId !== currentUserId);
-  const team = others.filter((s) => s.role === me.role);
-  const otherRoles = others.filter((s) => s.role !== me.role);
+  const team = others.filter((s) => !isBackup(s.role));
+  const backups = others.filter((s) => isBackup(s.role));
+  const names = (list: typeof others) =>
+    new Intl.ListFormat("de", { type: "conjunction" }).format(
+      list.map((p) => p.fullName),
+    );
 
   return (
     <article className="flex flex-col gap-4 rounded-2xl border bg-card p-5 shadow-xs">
@@ -178,23 +183,10 @@ function NextTermin({
             ))}
           </div>
           <p className="text-sm leading-snug text-zinc-700">
-            {team.length > 0 &&
-              `mit ${new Intl.ListFormat("de", { type: "conjunction" }).format(team.map((p) => p.fullName))}`}
-            {otherRoles.length > 0 && (
+            {team.length > 0 && `mit ${names(team)}`}
+            {backups.length > 0 && (
               <span className="block text-muted-foreground">
-                {(["trainer", "backup", "ueberzaehlig"] as const)
-                  .map((role) => ({
-                    role,
-                    names: otherRoles
-                      .filter((p) => p.role === role)
-                      .map((p) => p.fullName),
-                  }))
-                  .filter(({ names }) => names.length > 0)
-                  .map(
-                    ({ role, names }) =>
-                      `${ROLE_LABEL[role]}: ${names.join(", ")}`,
-                  )
-                  .join(" · ")}
+                Backup: {names(backups)}
               </span>
             )}
           </p>

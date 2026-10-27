@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { TerminFields, type TerminValues } from "@/components/termin-fields";
 import { Button } from "@/components/ui/button";
 
-/** "Weiterer Tag": a prefilled row (next day, same time and place) to add one more Termin. */
+/** "Weiterer Tag": a prefilled row (next day, same time, place and staffing) to add one more Termin. */
 export function AddTerminRow({
   kursId,
   dayNumber,
@@ -35,7 +35,7 @@ export function AddTerminRow({
           Weiterer Tag
         </Button>
         <span className="text-[13px] text-muted-foreground">
-          Übernimmt Uhrzeit und Ort, Datum einen Tag später.
+          Übernimmt Uhrzeit, Ort und Besetzung, Datum einen Tag später.
         </span>
       </div>
     );

@@ -1,5 +1,7 @@
 const MESSAGES = {
-  ausgebucht: "Dieser Termin ist leider schon ausgebucht.",
+  "nicht-qualifiziert": "Dafür fehlt die passende Qualifikation.",
+  "rolle-nicht-gebraucht":
+    "Diese Rolle wird bei diesem Termin nicht gebraucht.",
   "bereits-eingetragen": "Diese Person ist für den Termin bereits eingetragen.",
   "nicht-eingetragen": "Diese Person ist für den Termin nicht eingetragen.",
   "termin-vorbei": "Dieser Termin liegt in der Vergangenheit.",

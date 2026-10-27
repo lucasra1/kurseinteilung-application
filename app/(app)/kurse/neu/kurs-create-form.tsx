@@ -19,12 +19,7 @@ type Row = TerminValues & { key: number };
 
 /** A Kurs and all its Termine in one go; "Weiterer Tag" copies time and place. */
 export function KursCreateForm() {
-  const [kurs, setKurs] = useState<KursValues>({
-    title: "",
-    description: "",
-    trainersNeeded: 3,
-    backupsNeeded: 2,
-  });
+  const [kurs, setKurs] = useState<KursValues>({ title: "", description: "" });
   const [rows, setRows] = useState<Row[]>([
     {
       key: 0,
@@ -33,6 +28,8 @@ export function KursCreateForm() {
       endTime: "17:00",
       topic: "",
       location: "",
+      instruktorenNeeded: "1",
+      praxisanleiterNeeded: "0",
     },
   ]);
   const nextKey = useRef(1);
@@ -50,6 +47,8 @@ export function KursCreateForm() {
         endTime: last.endTime,
         topic: "",
         location: last.location,
+        instruktorenNeeded: last.instruktorenNeeded,
+        praxisanleiterNeeded: last.praxisanleiterNeeded,
       },
     ]);
   }
@@ -127,7 +126,7 @@ export function KursCreateForm() {
               Weiterer Tag
             </Button>
             <span className="text-[13px] text-muted-foreground">
-              Übernimmt Uhrzeit und Ort, Datum einen Tag später.
+              Übernimmt Uhrzeit, Ort und Besetzung, Datum einen Tag später.
             </span>
           </div>
         </section>

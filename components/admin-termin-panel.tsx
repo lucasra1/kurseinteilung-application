@@ -2,7 +2,10 @@ import { Pencil, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { removeTermin } from "@/app/(app)/kurse/actions";
 import { removeSignupAction } from "@/app/(app)/termine/actions";
-import { AddPersonSearch } from "@/components/add-person-search";
+import {
+  type AddPersonOption,
+  AddPersonSearch,
+} from "@/components/add-person-search";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { MoveButtons } from "@/components/move-buttons";
 import { Avatar, kursLabel, StatusChip } from "@/components/termin-bits";
@@ -10,23 +13,58 @@ import { TerminPanel } from "@/components/termin-panel";
 import { buttonVariants } from "@/components/ui/button";
 import type { AdminSignupView, TerminView } from "@/lib/dal/read-model";
 import { formatDate, formatTimeRange } from "@/lib/dates";
-import { nextRole, ROLE_LABEL, type Role } from "@/lib/staffing";
+import {
+  hasQualification,
+  isBackup,
+  KIND_LABEL,
+  KINDS,
+  type Kind,
+  needed,
+  nextRole,
+  type Qualifications,
+} from "@/lib/staffing";
 
-/** The Termin panel for admins: contacts, order, adding and removing people. */
+type Person = Qualifications & {
+  id: string;
+  fullName: string;
+  upcomingSignups: number;
+};
+
+/** The Termin panel for admins: contacts, order per role, adding and removing people. */
 export function AdminTerminPanel({
   termin,
   people,
   closeHref,
 }: {
   termin: TerminView<AdminSignupView>;
-  people: { id: string; fullName: string; upcomingSignups: number }[];
+  people: Person[];
   closeHref: string;
 }) {
   const signedUp = new Set(termin.signups.map((s) => s.profileId));
-  const addable = people.filter((p) => !signedUp.has(p.id));
-  const role = nextRole(termin.signups.length, termin);
-  const byRole = (r: Role) => termin.signups.filter((s) => s.role === r);
-  const lastIndex = termin.signups.length - 1;
+  const kinds = KINDS.filter((kind) => needed(termin, kind) > 0);
+  // Roles with a free fixed place first, so the default choice is the one that's needed.
+  const addOptions: AddPersonOption[] = [...kinds]
+    .sort(
+      (a, b) => Number(termin.missing[b] > 0) - Number(termin.missing[a] > 0),
+    )
+    .map((kind) => {
+      const role = nextRole(termin.signups, termin, kind);
+      const ofKind = termin.signups.filter((s) => s.kind === kind).length;
+      return {
+        kind,
+        label: KIND_LABEL[kind].one,
+        placement: isBackup(role)
+          ? `als Backup ${ofKind + 1 - needed(termin, kind)} (${KIND_LABEL[kind].one})`
+          : `als ${KIND_LABEL[kind].one} auf Platz ${ofKind + 1}`,
+        people: people
+          .filter((p) => !signedUp.has(p.id) && hasQualification(p, kind))
+          .map(({ id, fullName, upcomingSignups }) => ({
+            id,
+            fullName,
+            upcomingSignups,
+          })),
+      };
+    });
 
   return (
     <TerminPanel
@@ -72,126 +110,135 @@ export function AdminTerminPanel({
           </div>
         </div>
 
-        {(["trainer", "backup", "ueberzaehlig"] as const).map((r) => {
-          const list = byRole(r);
-          const total =
-            r === "trainer"
-              ? termin.trainersNeeded
-              : r === "backup"
-                ? termin.backupsNeeded
-                : list.length;
-          if (total === 0 && list.length === 0) return null;
-          const firstFreeRank =
-            r === "trainer"
-              ? list.length + 1
-              : termin.trainersNeeded + list.length + 1;
-          return (
-            <section key={r} className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-semibold">{ROLE_LABEL[r]}</h3>
-                {r !== "ueberzaehlig" && (
-                  <span className="text-[13px] text-muted-foreground">
-                    {list.length} von {total}
-                  </span>
-                )}
-              </div>
-              <ul className="flex flex-col gap-1">
-                {list.map((signup) => (
-                  <li
-                    key={signup.profileId}
-                    className="flex items-center gap-2.5"
-                  >
-                    <span className="w-4 shrink-0 text-[13px] font-semibold text-muted-foreground">
-                      {signup.rank}
-                    </span>
-                    <Avatar name={signup.fullName} />
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-sm font-medium">
-                        {signup.fullName}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        <a
-                          href={`mailto:${signup.email}`}
-                          className="hover:underline"
-                        >
-                          {signup.email}
-                        </a>
-                        {signup.phone && (
-                          <>
-                            {" · "}
-                            <a
-                              href={`tel:${signup.phone}`}
-                              className="hover:underline"
-                            >
-                              {signup.phone}
-                            </a>
-                          </>
-                        )}
-                      </span>
-                    </div>
-                    <MoveButtons
-                      terminId={termin.id}
-                      profileId={signup.profileId}
-                      fullName={signup.fullName}
-                      isFirst={signup.rank === 1}
-                      isLast={signup.rank === lastIndex + 1}
-                    />
-                    <ConfirmDialog
-                      iconOnly
-                      triggerLabel={`${signup.fullName} austragen`}
-                      triggerIcon={<X aria-hidden="true" />}
-                      triggerClassName="text-destructive hover:text-destructive"
-                      title={`${signup.fullName} austragen?`}
-                      description="Die Person wird per E-Mail informiert. Alle dahinter rücken nach."
-                      confirmLabel="Austragen"
-                      action={removeSignupAction}
-                      fields={{
-                        terminId: termin.id,
-                        profileId: signup.profileId,
-                      }}
-                    />
-                  </li>
-                ))}
-                {r !== "ueberzaehlig" &&
-                  Array.from(
-                    { length: Math.max(total - list.length, 0) },
-                    (_, i) => (
-                      <li
-                        // biome-ignore lint/suspicious/noArrayIndexKey: one row per free place
-                        key={i}
-                        className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
-                      >
-                        <span className="w-4 shrink-0 text-[13px] font-semibold">
-                          {firstFreeRank + i}
-                        </span>
-                        Freier Platz
-                      </li>
-                    ),
-                  )}
-              </ul>
-              {r === "ueberzaehlig" && (
-                <p className="text-[13px] text-muted-foreground">
-                  Mehr Leute als Plätze: erhöhe die Besetzung im Kurs oder trag
-                  jemanden aus.
-                </p>
-              )}
-            </section>
-          );
-        })}
+        {kinds.map((kind) => (
+          <KindSection key={kind} kind={kind} termin={termin} />
+        ))}
 
-        {role ? (
-          <AddPersonSearch
-            terminId={termin.id}
-            people={addable}
-            placement={`als ${ROLE_LABEL[role]} auf Platz ${termin.signups.length + 1}`}
-          />
-        ) : (
-          <p className="rounded-xl bg-muted p-3 text-[13px] text-zinc-700">
-            Ausgebucht. Um noch jemanden einzutragen, erhöhe zuerst die
-            Besetzung im Kurs.
-          </p>
+        {addOptions.length > 0 && (
+          <AddPersonSearch terminId={termin.id} options={addOptions} />
         )}
       </div>
     </TerminPanel>
+  );
+}
+
+function KindSection({
+  kind,
+  termin,
+}: {
+  kind: Kind;
+  termin: TerminView<AdminSignupView>;
+}) {
+  const ofKind = termin.signups.filter((s) => s.kind === kind);
+  const fixed = ofKind.filter((s) => !isBackup(s.role));
+  const backups = ofKind.filter((s) => isBackup(s.role));
+  const total = needed(termin, kind);
+  const free = termin.missing[kind];
+
+  return (
+    <section className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold">{KIND_LABEL[kind].many}</h3>
+        <span className="text-[13px] text-muted-foreground">
+          {fixed.length} von {total}
+        </span>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {fixed.map((signup) => (
+          <SignupRow
+            key={signup.profileId}
+            termin={termin}
+            signup={signup}
+            label={String(signup.rank)}
+            isLast={signup.rank === ofKind.length}
+          />
+        ))}
+        {Array.from({ length: free }, (_, i) => (
+          <li
+            // biome-ignore lint/suspicious/noArrayIndexKey: one row per free place
+            key={i}
+            className="flex min-h-11 items-center gap-2.5 rounded-xl border-[1.5px] border-dashed border-zinc-300 px-2.5 text-sm text-muted-foreground"
+          >
+            <span className="w-5 shrink-0 text-[13px] font-semibold">
+              {fixed.length + i + 1}
+            </span>
+            Freier Platz
+          </li>
+        ))}
+      </ul>
+      {backups.length > 0 && (
+        <>
+          <h4 className="mt-2 text-[13px] font-semibold text-muted-foreground">
+            Backups ({KIND_LABEL[kind].many})
+          </h4>
+          <ul className="flex flex-col gap-1">
+            {backups.map((signup) => (
+              <SignupRow
+                key={signup.profileId}
+                termin={termin}
+                signup={signup}
+                label={`B${signup.rank - total}`}
+                isLast={signup.rank === ofKind.length}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+function SignupRow({
+  termin,
+  signup,
+  label,
+  isLast,
+}: {
+  termin: TerminView<AdminSignupView>;
+  signup: AdminSignupView;
+  label: string;
+  isLast: boolean;
+}) {
+  return (
+    <li className="flex items-center gap-2.5">
+      <span className="w-5 shrink-0 text-[13px] font-semibold text-muted-foreground">
+        {label}
+      </span>
+      <Avatar name={signup.fullName} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium">{signup.fullName}</span>
+        <span className="truncate text-xs text-muted-foreground">
+          <a href={`mailto:${signup.email}`} className="hover:underline">
+            {signup.email}
+          </a>
+          {signup.phone && (
+            <>
+              {" · "}
+              <a href={`tel:${signup.phone}`} className="hover:underline">
+                {signup.phone}
+              </a>
+            </>
+          )}
+        </span>
+      </div>
+      <MoveButtons
+        terminId={termin.id}
+        profileId={signup.profileId}
+        fullName={signup.fullName}
+        isFirst={signup.rank === 1}
+        isLast={isLast}
+      />
+      <ConfirmDialog
+        iconOnly
+        triggerLabel={`${signup.fullName} austragen`}
+        triggerIcon={<X aria-hidden="true" />}
+        triggerClassName="text-destructive hover:text-destructive"
+        title={`${signup.fullName} austragen?`}
+        description="Die Person wird per E-Mail informiert. Wer dahinter steht, rückt nach."
+        confirmLabel="Austragen"
+        action={removeSignupAction}
+        fields={{ terminId: termin.id, profileId: signup.profileId }}
+      />
+    </li>
   );
 }

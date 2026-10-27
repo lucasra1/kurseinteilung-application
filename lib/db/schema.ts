@@ -24,24 +24,17 @@ export const profiles = appSchema.table("profiles", {
   email: text().notNull().unique(),
   phone: text(),
   isAdmin: boolean().notNull().default(false),
+  isInstruktor: boolean().notNull().default(false),
+  isPraxisanleiter: boolean().notNull().default(false),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
-export const kurse = appSchema.table(
-  "kurse",
-  {
-    id: uuid().primaryKey().defaultRandom(),
-    title: text().notNull(),
-    description: text().notNull().default(""),
-    trainersNeeded: integer().notNull(),
-    backupsNeeded: integer().notNull(),
-    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    check("kurse_trainers_needed_check", sql`${t.trainersNeeded} >= 1`),
-    check("kurse_backups_needed_check", sql`${t.backupsNeeded} >= 0`),
-  ],
-);
+export const kurse = appSchema.table("kurse", {
+  id: uuid().primaryKey().defaultRandom(),
+  title: text().notNull(),
+  description: text().notNull().default(""),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 
 export const termine = appSchema.table(
   "termine",
@@ -55,10 +48,16 @@ export const termine = appSchema.table(
     endTime: time().notNull(),
     topic: text().notNull(),
     location: text(),
+    instruktorenNeeded: integer().notNull().default(0),
+    praxisanleiterNeeded: integer().notNull().default(0),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     check("termine_time_check", sql`${t.endTime} > ${t.startTime}`),
+    check(
+      "termine_staffing_check",
+      sql`${t.instruktorenNeeded} >= 0 and ${t.praxisanleiterNeeded} >= 0 and ${t.instruktorenNeeded} + ${t.praxisanleiterNeeded} >= 1`,
+    ),
     index().on(t.kursId),
   ],
 );
@@ -73,11 +72,17 @@ export const signups = appSchema.table(
     profileId: uuid()
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
+    /** The role this person signed up for; see lib/staffing.ts. */
+    kind: text().$type<"instruktor" | "praxisanleiter">().notNull(),
     position: integer().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique().on(t.terminId, t.profileId),
+    check(
+      "signups_kind_check",
+      sql`${t.kind} in ('instruktor', 'praxisanleiter')`,
+    ),
     index().on(t.terminId, t.position),
     index().on(t.profileId),
     check("signups_position_check", sql`${t.position} >= 1`),

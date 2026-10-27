@@ -9,8 +9,11 @@ import {
   sendStaffingNotifications,
 } from "@/lib/notifications";
 import {
-  capacity,
   diffRoles,
+  hasQualification,
+  KINDS,
+  type Kind,
+  needed,
   type RoleSnapshot,
   rankSignups,
 } from "@/lib/staffing";
@@ -23,13 +26,14 @@ export type LockedTermin = {
   startTime: string;
   endTime: string;
   topic: string;
-  trainersNeeded: number;
-  backupsNeeded: number;
+  instruktorenNeeded: number;
+  praxisanleiterNeeded: number;
 };
 
 type SignupRow = {
   terminId: string;
   profileId: string;
+  kind: Kind;
   position: number;
   createdAt: Date;
   fullName: string;
@@ -61,8 +65,8 @@ async function loadTermine(
       startTime: termine.startTime,
       endTime: termine.endTime,
       topic: termine.topic,
-      trainersNeeded: kurse.trainersNeeded,
-      backupsNeeded: kurse.backupsNeeded,
+      instruktorenNeeded: termine.instruktorenNeeded,
+      praxisanleiterNeeded: termine.praxisanleiterNeeded,
     })
     .from(termine)
     .innerJoin(kurse, eq(termine.kursId, kurse.id))
@@ -77,6 +81,7 @@ async function loadSignups(tx: Tx, ids: string[]): Promise<SignupRow[]> {
     .select({
       terminId: signups.terminId,
       profileId: signups.profileId,
+      kind: signups.kind,
       position: signups.position,
       createdAt: signups.createdAt,
       fullName: profiles.fullName,
@@ -175,8 +180,9 @@ export async function mutateStaffing<T>(opts: {
     [...out.rankedAfter].map(([terminId, list]) => [
       terminId,
       {
-        trainers: list.filter((s) => s.role === "trainer").length,
-        backups: list.filter((s) => s.role === "backup").length,
+        instruktor: list.filter((s) => s.role === "instruktor").length,
+        praxisanleiter: list.filter((s) => s.role === "praxisanleiter").length,
+        backups: list.filter((s) => !KINDS.includes(s.role as Kind)).length,
       },
     ]),
   );
@@ -198,12 +204,31 @@ export function lockedTermin(
   return termin;
 }
 
-/** Appends a person at the end of the list. Call only inside `mutateStaffing.run`. */
+/**
+ * Appends a person at the end of the list for `kind`: a fixed place if one is free,
+ * otherwise a backup. Call only inside `mutateStaffing.run`.
+ */
 export async function appendSignup(
   tx: Tx,
   termin: LockedTermin,
   profileId: string,
+  kind: Kind,
 ): Promise<void> {
+  if (needed(termin, kind) === 0) {
+    throw new DomainError("rolle-nicht-gebraucht");
+  }
+  const [person] = await tx
+    .select({
+      isInstruktor: profiles.isInstruktor,
+      isPraxisanleiter: profiles.isPraxisanleiter,
+    })
+    .from(profiles)
+    .where(eq(profiles.id, profileId));
+  if (!person) throw new DomainError("nicht-gefunden");
+  if (!hasQualification(person, kind)) {
+    throw new DomainError("nicht-qualifiziert");
+  }
+
   const rows = await tx
     .select({ profileId: signups.profileId, position: signups.position })
     .from(signups)
@@ -211,12 +236,11 @@ export async function appendSignup(
   if (rows.some((row) => row.profileId === profileId)) {
     throw new DomainError("bereits-eingetragen");
   }
-  if (rows.length >= capacity(termin)) throw new DomainError("ausgebucht");
 
   const nextPosition = Math.max(0, ...rows.map((row) => row.position)) + 1;
   await tx
     .insert(signups)
-    .values({ terminId: termin.id, profileId, position: nextPosition });
+    .values({ terminId: termin.id, profileId, kind, position: nextPosition });
 }
 
 /** Removes a person and moves everyone behind them up. Call only inside `mutateStaffing.run`. */

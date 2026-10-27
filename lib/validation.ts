@@ -22,11 +22,28 @@ const fullName = z
 
 export const loginSchema = z.object({ email: emailSchema });
 
-export const inviteSchema = z.object({
-  token: z.string().min(1),
-  fullName,
-  email: emailSchema,
-  phone: optionalText,
+/** A checkbox: "on" when ticked, missing otherwise. */
+const checkbox = z
+  .string()
+  .optional()
+  .transform((value) => value === "on");
+
+export const inviteSchema = z
+  .object({
+    token: z.string().min(1),
+    fullName,
+    email: emailSchema,
+    phone: optionalText,
+    isInstruktor: checkbox,
+    isPraxisanleiter: checkbox,
+  })
+  .refine((v) => v.isInstruktor || v.isPraxisanleiter, {
+    path: ["isInstruktor"],
+    error: "Bitte wähl mindestens eine Qualifikation aus.",
+  });
+
+export const kindSchema = z.enum(["instruktor", "praxisanleiter"], {
+  error: "Bitte wähl eine Rolle aus.",
 });
 
 export const profileSchema = z.object({
@@ -37,15 +54,12 @@ export const profileSchema = z.object({
 export const kursSchema = z.object({
   title: z.string().trim().min(1, { error: "Bitte gib einen Titel ein." }),
   description: z.string().trim().default(""),
-  trainersNeeded: z.coerce
-    .number()
-    .int()
-    .min(1, { error: "Es braucht mindestens einen Trainer pro Termin." }),
-  backupsNeeded: z.coerce
-    .number()
-    .int()
-    .min(0, { error: "Die Anzahl Backups darf nicht negativ sein." }),
 });
+
+const count = z.coerce
+  .number({ error: "Bitte gib eine Anzahl ein." })
+  .int({ error: "Bitte gib eine ganze Zahl ein." })
+  .min(0, { error: "Die Anzahl darf nicht negativ sein." });
 
 const time = z
   .string()
@@ -63,10 +77,17 @@ export const terminSchema = z
     endTime: time,
     topic: z.string().trim().min(1, { error: "Bitte gib ein Thema ein." }),
     location: optionalText,
+    instruktorenNeeded: count,
+    praxisanleiterNeeded: count,
   })
   .refine((t) => t.endTime > t.startTime, {
     path: ["endTime"],
     error: "Das Ende muss nach dem Beginn liegen.",
+  })
+  .refine((t) => t.instruktorenNeeded + t.praxisanleiterNeeded >= 1, {
+    path: ["instruktorenNeeded"],
+    error:
+      "Ein Termin braucht mindestens einen Instruktor oder Praxisanleiter.",
   });
 
 export type TerminInput = z.infer<typeof terminSchema>;
@@ -82,6 +103,8 @@ export function parseTerminRows(formData: FormData): TerminInput[] {
   const endTimes = column("endTime");
   const topics = column("topic");
   const locations = column("location");
+  const instruktoren = column("instruktorenNeeded");
+  const praxisanleiter = column("praxisanleiterNeeded");
   if (dates.length === 0) {
     throw new ZodError([
       {
@@ -99,6 +122,8 @@ export function parseTerminRows(formData: FormData): TerminInput[] {
       endTime: endTimes[index],
       topic: topics[index],
       location: locations[index],
+      instruktorenNeeded: instruktoren[index],
+      praxisanleiterNeeded: praxisanleiter[index],
     });
     if (!result.success) {
       throw new ZodError(

@@ -16,17 +16,19 @@ import { todayInVienna } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { kurse, profiles, signups, termine } from "@/lib/db/schema";
 import {
-  capacity,
+  type Kind,
+  type Missing,
+  missingPlaces,
   type Role,
   rankSignups,
-  type StaffingStatus,
-  staffingStatus,
 } from "@/lib/staffing";
 import { uuidSchema } from "@/lib/validation";
 
 export type SignupView = {
   profileId: string;
   fullName: string;
+  kind: Kind;
+  /** 1-based within the kind. */
   rank: number;
   role: Role;
 };
@@ -49,13 +51,14 @@ export type TerminView<S = SignupView> = {
   endTime: string;
   topic: string;
   location: string | null;
-  trainersNeeded: number;
-  backupsNeeded: number;
+  instruktorenNeeded: number;
+  praxisanleiterNeeded: number;
+  /** In signup order. */
   signups: S[];
-  trainerCount: number;
-  backupCount: number;
-  status: StaffingStatus;
-  isFull: boolean;
+  /** Free fixed places per kind. */
+  missing: Missing;
+  /** Every fixed place is taken. */
+  isStaffed: boolean;
   isPast: boolean;
 };
 
@@ -63,8 +66,6 @@ export type KursView<S = SignupView> = {
   id: string;
   title: string;
   description: string;
-  trainersNeeded: number;
-  backupsNeeded: number;
   termine: TerminView<S>[];
 };
 
@@ -124,6 +125,7 @@ async function loadKursViews(
           .select({
             terminId: signups.terminId,
             profileId: signups.profileId,
+            kind: signups.kind,
             position: signups.position,
             createdAt: signups.createdAt,
             fullName: profiles.fullName,
@@ -144,22 +146,22 @@ async function loadKursViews(
     id: kurs.id,
     title: kurs.title,
     description: kurs.description,
-    trainersNeeded: kurs.trainersNeeded,
-    backupsNeeded: kurs.backupsNeeded,
     termine: terminRows
       .filter((termin) => termin.kursId === kurs.id)
       .map((termin) => {
         const ranked = rankSignups(
           signupRows.filter((s) => s.terminId === termin.id),
-          kurs,
+          termin,
         ).map((s) => ({
           profileId: s.profileId,
           fullName: s.fullName,
           email: s.email,
           phone: s.phone,
+          kind: s.kind,
           rank: s.rank,
           role: s.role,
         }));
+        const missing = missingPlaces(ranked, termin);
         return {
           id: termin.id,
           kursId: termin.kursId,
@@ -172,13 +174,11 @@ async function loadKursViews(
           endTime: termin.endTime,
           topic: termin.topic,
           location: termin.location,
-          trainersNeeded: kurs.trainersNeeded,
-          backupsNeeded: kurs.backupsNeeded,
+          instruktorenNeeded: termin.instruktorenNeeded,
+          praxisanleiterNeeded: termin.praxisanleiterNeeded,
           signups: ranked,
-          trainerCount: ranked.filter((s) => s.role === "trainer").length,
-          backupCount: ranked.filter((s) => s.role === "backup").length,
-          status: staffingStatus(ranked.length, kurs),
-          isFull: ranked.length >= capacity(kurs),
+          missing,
+          isStaffed: missing.instruktor + missing.praxisanleiter === 0,
           isPast: termin.date < today,
         };
       }),
@@ -188,12 +188,15 @@ async function loadKursViews(
 function withoutContacts(termin: TerminView<AdminSignupView>): TerminView {
   return {
     ...termin,
-    signups: termin.signups.map(({ profileId, fullName, rank, role }) => ({
-      profileId,
-      fullName,
-      rank,
-      role,
-    })),
+    signups: termin.signups.map(
+      ({ profileId, fullName, kind, rank, role }) => ({
+        profileId,
+        fullName,
+        kind,
+        rank,
+        role,
+      }),
+    ),
   };
 }
 

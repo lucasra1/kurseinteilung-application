@@ -6,14 +6,18 @@ import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { type EmailMessage, sendEmails } from "@/lib/email";
 import { env } from "@/lib/env";
-import { ROLE_LABEL, type RoleChange } from "@/lib/staffing";
+import { KIND_LABEL, KINDS, ROLE_LABEL, type RoleChange } from "@/lib/staffing";
 
 export type StaffingChange = RoleChange & {
   termin: LockedTermin;
   person: { fullName: string; email: string };
 };
 
-type TerminCounts = { trainers: number; backups: number };
+type TerminCounts = {
+  instruktor: number;
+  praxisanleiter: number;
+  backups: number;
+};
 
 const SIGNATURE = "\n\nKurseinteilung";
 
@@ -23,6 +27,21 @@ function describe(termin: LockedTermin) {
     when: formatTerminWhen(termin),
     day: formatDate(termin.date),
   };
+}
+
+/** "Instruktoren 2/3, Praxisanleiter 1/1, 2 Backups" */
+function staffingSummary(termin: LockedTermin, counts: TerminCounts): string {
+  const neededOf = {
+    instruktor: termin.instruktorenNeeded,
+    praxisanleiter: termin.praxisanleiterNeeded,
+  };
+  const parts = KINDS.filter((kind) => neededOf[kind] > 0).map(
+    (kind) => `${KIND_LABEL[kind].many} ${counts[kind]}/${neededOf[kind]}`,
+  );
+  if (counts.backups > 0) {
+    parts.push(counts.backups === 1 ? "1 Backup" : `${counts.backups} Backups`);
+  }
+  return parts.join(", ");
 }
 
 function withdrawalEmail(
@@ -37,8 +56,7 @@ function withdrawalEmail(
     subject: `Abmeldung: ${termin.kursTitle}, ${day}`,
     text:
       `${change.person.fullName} hat sich von ${what} am ${when} abgemeldet.\n\n` +
-      `Aktueller Stand: Trainer ${counts.trainers}/${termin.trainersNeeded}, ` +
-      `Backup ${counts.backups}/${termin.backupsNeeded}.\n\n` +
+      `Aktueller Stand: ${staffingSummary(termin, counts)}.\n\n` +
       `${env.APP_URL}/termine?termin=${termin.id}${SIGNATURE}`,
   };
 }
@@ -103,7 +121,8 @@ export async function sendStaffingNotifications(
       const recipients = await adminEmails(ctx.actorId);
       for (const change of withdrawals) {
         const counts = ctx.terminStateAfter.get(change.terminId) ?? {
-          trainers: 0,
+          instruktor: 0,
+          praxisanleiter: 0,
           backups: 0,
         };
         for (const to of recipients) {

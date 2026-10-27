@@ -1,17 +1,21 @@
 import { formatLongDate, formatWeekday } from "@/lib/dates";
 import {
+  isBackup,
+  KIND_LABEL,
+  KINDS,
+  type Missing,
+  needed,
   ROLE_LABEL,
   type Role,
   type Staffing,
-  type StaffingStatus,
   staffingLabel,
 } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
 
 type Counts = Staffing & {
-  status: StaffingStatus;
-  trainerCount: number;
-  backupCount: number;
+  missing: Missing;
+  isStaffed: boolean;
+  signups: { role: Role }[];
 };
 
 /** "Erste Hilfe Grundkurs · Tag 1 von 2" */
@@ -72,12 +76,6 @@ export function DateBlock({ date }: { date: string }) {
   );
 }
 
-const STATUS_TONE: Record<StaffingStatus, string> = {
-  "trainer-fehlt": "bg-brand-100 text-brand-700",
-  "backup-fehlt": "bg-amber-100 text-amber-800",
-  voll: "bg-green-100 text-green-800",
-};
-
 export function StatusChip({
   termin,
   className,
@@ -88,23 +86,19 @@ export function StatusChip({
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold whitespace-nowrap",
-        STATUS_TONE[termin.status],
+        "inline-flex min-h-6 items-center rounded-full px-2.5 py-0.5 text-xs leading-tight font-semibold",
+        termin.isStaffed
+          ? "bg-green-100 text-green-800"
+          : "bg-brand-100 text-brand-700",
         className,
       )}
     >
-      {staffingLabel(termin)}
+      {staffingLabel(termin.missing)}
     </span>
   );
 }
 
-const ROLE_TONE: Record<Role, string> = {
-  trainer: "bg-foreground text-background",
-  backup: "border border-zinc-300 text-zinc-700",
-  ueberzaehlig: "bg-muted text-muted-foreground",
-};
-
-/** The current person's own role, e.g. "Du: Backup". */
+/** The current person's own role, e.g. "Du: Instruktor". */
 export function RoleChip({
   role,
   prefix = "Du: ",
@@ -118,7 +112,9 @@ export function RoleChip({
     <span
       className={cn(
         "inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold whitespace-nowrap",
-        ROLE_TONE[role],
+        isBackup(role)
+          ? "border border-zinc-300 text-zinc-700"
+          : "bg-foreground text-background",
         className,
       )}
     >
@@ -128,21 +124,23 @@ export function RoleChip({
   );
 }
 
-/** Taken and free places as dots: "Trainer ●●○ Backup ○○". */
+/** Taken and free fixed places per needed role as dots, plus the number of backups. */
 export function SlotDots({ termin }: { termin: Counts }) {
+  const backups = termin.signups.filter((s) => isBackup(s.role)).length;
   return (
     <span className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-xs text-muted-foreground">
-      <Dots
-        label="Trainer"
-        filled={termin.trainerCount}
-        total={termin.trainersNeeded}
-      />
-      {termin.backupsNeeded > 0 && (
+      {KINDS.filter((kind) => needed(termin, kind) > 0).map((kind) => (
         <Dots
-          label="Backup"
-          filled={termin.backupCount}
-          total={termin.backupsNeeded}
+          key={kind}
+          label={KIND_LABEL[kind].many}
+          filled={needed(termin, kind) - termin.missing[kind]}
+          total={needed(termin, kind)}
         />
+      ))}
+      {backups > 0 && (
+        <span>
+          + {backups} {backups === 1 ? "Backup" : "Backups"}
+        </span>
       )}
     </span>
   );

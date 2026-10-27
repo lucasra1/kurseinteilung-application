@@ -11,9 +11,9 @@ import { isPastDate } from "@/lib/dates";
 import { db } from "@/lib/db/client";
 import { profiles, signups } from "@/lib/db/schema";
 import { DomainError } from "@/lib/errors";
-import { sortByPosition } from "@/lib/staffing";
+import { type Kind, sortByPosition } from "@/lib/staffing";
 
-export async function signUpSelf(terminId: string): Promise<void> {
+export async function signUpSelf(terminId: string, kind: Kind): Promise<void> {
   const user = await requireUser();
   await mutateStaffing({
     actorId: user.id,
@@ -21,7 +21,7 @@ export async function signUpSelf(terminId: string): Promise<void> {
     run: async (tx, termine) => {
       const termin = lockedTermin(termine, terminId);
       if (isPastDate(termin.date)) throw new DomainError("termin-vorbei");
-      await appendSignup(tx, termin, user.id);
+      await appendSignup(tx, termin, user.id, kind);
     },
   });
 }
@@ -44,6 +44,7 @@ export async function withdrawSelf(terminId: string): Promise<void> {
 export async function adminAddSignup(
   terminId: string,
   profileId: string,
+  kind: Kind,
 ): Promise<void> {
   const admin = await requireAdmin();
   const [person] = await db
@@ -55,7 +56,7 @@ export async function adminAddSignup(
     actorId: admin.id,
     terminIds: async () => [terminId],
     run: async (tx, termine) => {
-      await appendSignup(tx, lockedTermin(termine, terminId), profileId);
+      await appendSignup(tx, lockedTermin(termine, terminId), profileId, kind);
     },
   });
 }
@@ -74,7 +75,7 @@ export async function adminRemoveSignup(
   });
 }
 
-/** Swaps a person with their neighbor in signup order; does nothing at either end. */
+/** Swaps a person with their neighbor of the same kind in signup order; does nothing at either end. */
 export async function adminMoveSignup(
   terminId: string,
   profileId: string,
@@ -91,18 +92,20 @@ export async function adminMoveSignup(
           .select({
             id: signups.id,
             profileId: signups.profileId,
+            kind: signups.kind,
             position: signups.position,
             createdAt: signups.createdAt,
           })
           .from(signups)
           .where(eq(signups.terminId, terminId)),
       );
-      const index = ordered.findIndex((s) => s.profileId === profileId);
-      if (index === -1) throw new DomainError("nicht-eingetragen");
-      const neighbor = ordered[direction === "up" ? index - 1 : index + 1];
+      const current = ordered.find((s) => s.profileId === profileId);
+      if (!current) throw new DomainError("nicht-eingetragen");
+      const sameKind = ordered.filter((s) => s.kind === current.kind);
+      const index = sameKind.indexOf(current);
+      const neighbor = sameKind[direction === "up" ? index - 1 : index + 1];
       if (!neighbor) return;
 
-      const current = ordered[index];
       await tx
         .update(signups)
         .set({ position: neighbor.position })

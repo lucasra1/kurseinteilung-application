@@ -4,6 +4,12 @@ import { SkeletonList } from "@/components/skeleton-list";
 import { Avatar } from "@/components/termin-bits";
 import { Button } from "@/components/ui/button";
 import { requireUser } from "@/lib/dal/auth";
+import {
+  hasQualification,
+  KIND_LABEL,
+  KINDS,
+  type Qualifications,
+} from "@/lib/staffing";
 import { logout } from "../actions";
 import { ProfileForm } from "./profile-form";
 
@@ -32,7 +38,8 @@ async function Profile() {
               {user.fullName}
             </span>
             <span className="truncate text-sm text-muted-foreground">
-              {user.isAdmin ? "Admin" : "Trainer"}
+              {qualificationText(user)}
+              {user.isAdmin && " · Admin"}
             </span>
           </div>
         </div>
@@ -42,6 +49,9 @@ async function Profile() {
           phone={user.phone}
         />
       </section>
+      <p className="text-[13px] text-muted-foreground">
+        Deine Qualifikation ändern kann ein Admin unter Personen.
+      </p>
       <form action={logout}>
         <Button type="submit" variant="outline" className="w-full sm:w-auto">
           <LogOut aria-hidden="true" />
@@ -50,4 +60,11 @@ async function Profile() {
       </form>
     </>
   );
+}
+
+function qualificationText(q: Qualifications): string {
+  const kinds = KINDS.filter((kind) => hasQualification(q, kind));
+  return kinds.length > 0
+    ? kinds.map((kind) => KIND_LABEL[kind].one).join(" und ")
+    : "Noch keine Qualifikation";
 }

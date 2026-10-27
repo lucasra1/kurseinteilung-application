@@ -6,9 +6,12 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import { Button } from "@/components/ui/button";
+import type { Kind } from "@/lib/staffing";
+
+export type SignupOption = { kind: Kind; label: string; primary: boolean };
 
 export type SignupCtaProps = { terminId: string; hint?: string } & (
-  | { mode: "eintragen"; label: string }
+  | { mode: "eintragen"; options: SignupOption[] }
   | { mode: "austragen" }
   | { mode: "disabled"; label: string }
 );
@@ -27,13 +30,19 @@ export function SignupCta(props: SignupCtaProps) {
         <form action={formAction} className="flex flex-col gap-2">
           <input type="hidden" name="terminId" value={props.terminId} />
           <input type="hidden" name="intent" value="eintragen" />
-          <SubmitButton
-            size="lg"
-            className="w-full"
-            pendingText="Wird eingetragen…"
-          >
-            {props.label}
-          </SubmitButton>
+          {props.options.map((option) => (
+            <SubmitButton
+              key={option.kind}
+              name="kind"
+              value={option.kind}
+              size="lg"
+              variant={option.primary ? "default" : "outline"}
+              className="w-full"
+              pendingText="Wird eingetragen…"
+            >
+              {option.label}
+            </SubmitButton>
+          ))}
         </form>
       )}
       {props.mode === "austragen" && (
@@ -50,7 +59,7 @@ export function SignupCta(props: SignupCtaProps) {
         />
       )}
       {props.mode === "disabled" && (
-        <Button size="lg" className="w-full" disabled>
+        <Button size="lg" variant="secondary" className="w-full" disabled>
           {props.label}
         </Button>
       )}

@@ -51,8 +51,9 @@ async function Personen() {
             Neue Leute einladen
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            Schick diesen Link an neue Trainer, zum Beispiel per WhatsApp oder
-            E-Mail. Wer ihn öffnet, kann sich selbst registrieren.
+            Schick diesen Link an neue Instruktoren und Praxisanleiter, zum
+            Beispiel per WhatsApp oder E-Mail. Wer ihn öffnet, registriert sich
+            selbst und gibt dabei seine Qualifikation an.
           </p>
         </div>
         <div className="flex min-w-0 flex-[999_1_24rem] flex-col gap-1.5">
@@ -91,6 +92,8 @@ async function Personen() {
           phone: p.phone,
           isAdmin: p.isAdmin,
           isEnvAdmin: p.isEnvAdmin,
+          isInstruktor: p.isInstruktor,
+          isPraxisanleiter: p.isPraxisanleiter,
           upcomingSignups: p.upcomingSignups,
         }))}
       />

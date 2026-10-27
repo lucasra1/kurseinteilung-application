@@ -54,8 +54,6 @@ async function KursDetail({
               id: kurs.id,
               title: kurs.title,
               description: kurs.description,
-              trainersNeeded: kurs.trainersNeeded,
-              backupsNeeded: kurs.backupsNeeded,
             }}
           />
           <div className="border-t pt-4">
@@ -97,13 +95,12 @@ async function KursDetail({
                   endTime: formatTime(termin.endTime),
                   topic: termin.topic,
                   location: termin.location ?? "",
+                  instruktorenNeeded: String(termin.instruktorenNeeded),
+                  praxisanleiterNeeded: String(termin.praxisanleiterNeeded),
                   isPast: termin.isPast,
-                  status: termin.status,
-                  trainerCount: termin.trainerCount,
-                  backupCount: termin.backupCount,
-                  trainersNeeded: termin.trainersNeeded,
-                  backupsNeeded: termin.backupsNeeded,
-                  signupCount: termin.signups.length,
+                  missing: termin.missing,
+                  isStaffed: termin.isStaffed,
+                  signups: termin.signups.map((s) => ({ role: s.role })),
                 }}
               />
             ))}
@@ -118,6 +115,8 @@ async function KursDetail({
               endTime: last ? formatTime(last.endTime) : "17:00",
               topic: "",
               location: last?.location ?? "",
+              instruktorenNeeded: String(last?.instruktorenNeeded ?? 1),
+              praxisanleiterNeeded: String(last?.praxisanleiterNeeded ?? 0),
             }}
           />
         </section>

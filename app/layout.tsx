@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Kurseinteilung",
-  description: "Einteilung von Trainer:innen für Kurse",
+  description: "Einteilung von Instruktoren und Praxisanleitern für Kurse",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

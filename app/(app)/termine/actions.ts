@@ -9,7 +9,7 @@ import {
   signUpSelf,
   withdrawSelf,
 } from "@/lib/dal/signups";
-import { uuidSchema } from "@/lib/validation";
+import { kindSchema, uuidSchema } from "@/lib/validation";
 
 const signupFormSchema = z.object({
   terminId: uuidSchema,
@@ -22,11 +22,10 @@ export async function changeSignup(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { terminId, intent } = signupFormSchema.parse(
-      Object.fromEntries(formData),
-    );
+    const values = Object.fromEntries(formData);
+    const { terminId, intent } = signupFormSchema.parse(values);
     if (intent === "eintragen") {
-      await signUpSelf(terminId);
+      await signUpSelf(terminId, kindSchema.parse(values.kind));
       return "Du bist eingetragen.";
     }
     await withdrawSelf(terminId);
@@ -47,10 +46,9 @@ export async function addSignup(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { terminId, profileId } = adminSignupForm.parse(
-      Object.fromEntries(formData),
-    );
-    await adminAddSignup(terminId, profileId);
+    const values = Object.fromEntries(formData);
+    const { terminId, profileId } = adminSignupForm.parse(values);
+    await adminAddSignup(terminId, profileId, kindSchema.parse(values.kind));
     return "Eingetragen.";
   });
 }

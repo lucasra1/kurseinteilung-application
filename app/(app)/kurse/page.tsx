@@ -49,7 +49,7 @@ async function KursList() {
     <div className="grid gap-3 md:grid-cols-2">
       {kurse.map((kurs) => {
         const upcoming = kurs.termine.filter((t) => !t.isPast);
-        const withGaps = upcoming.filter((t) => t.status !== "voll").length;
+        const withGaps = upcoming.filter((t) => !t.isStaffed).length;
         const next = upcoming[0];
         return (
           <Link
@@ -67,10 +67,6 @@ async function KursList() {
                 </p>
               )}
             </div>
-            <p className="text-sm text-zinc-700">
-              {kurs.trainersNeeded} Trainer · {kurs.backupsNeeded} Backup pro
-              Termin
-            </p>
             <div className="mt-auto flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
               {upcoming.length === 0 ? (
                 <span className="rounded-full bg-muted px-2.5 py-1 font-semibold text-zinc-700">

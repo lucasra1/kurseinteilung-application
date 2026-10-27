@@ -9,17 +9,20 @@ import { db } from "@/lib/db/client";
 import { profiles, signups, termine } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { DomainError } from "@/lib/errors";
+import type { Kind, Qualifications } from "@/lib/staffing";
 import { supabaseService } from "@/lib/supabase/service";
 
 /**
  * Unguarded, internal: creates the Supabase auth user (unless one exists) and the profile.
  * Only called from the auth flows after they checked the invite token or ADMIN_EMAILS.
  */
-export async function createAccount(input: {
-  email: string;
-  fullName: string;
-  phone: string | null;
-}): Promise<string> {
+export async function createAccount(
+  input: {
+    email: string;
+    fullName: string;
+    phone: string | null;
+  } & Qualifications,
+): Promise<string> {
   const [existing] = await db
     .select({ id: authUsers.id })
     .from(authUsers)
@@ -42,6 +45,8 @@ export async function createAccount(input: {
       fullName: input.fullName,
       email: input.email,
       phone: input.phone,
+      isInstruktor: input.isInstruktor,
+      isPraxisanleiter: input.isPraxisanleiter,
     })
     .onConflictDoNothing();
   return userId;
@@ -58,7 +63,7 @@ export async function updateOwnProfile(input: {
     .where(eq(profiles.id, user.id));
 }
 
-export type PersonView = {
+export type PersonView = Qualifications & {
   id: string;
   fullName: string;
   email: string;
@@ -78,6 +83,8 @@ export async function listPeople(): Promise<PersonView[]> {
       email: profiles.email,
       phone: profiles.phone,
       isAdmin: profiles.isAdmin,
+      isInstruktor: profiles.isInstruktor,
+      isPraxisanleiter: profiles.isPraxisanleiter,
       upcomingSignups: sql<number>`count(${termine.id})::int`,
     })
     .from(profiles)
@@ -127,6 +134,24 @@ export async function setAdmin(
   }
 
   await db.update(profiles).set({ isAdmin }).where(eq(profiles.id, profileId));
+}
+
+/** Existing signups stay as they are; the admin decides about them separately. */
+export async function setQualification(
+  profileId: string,
+  kind: Kind,
+  value: boolean,
+): Promise<void> {
+  await requireAdmin();
+  await findProfile(profileId);
+  await db
+    .update(profiles)
+    .set(
+      kind === "instruktor"
+        ? { isInstruktor: value }
+        : { isPraxisanleiter: value },
+    )
+    .where(eq(profiles.id, profileId));
 }
 
 /** Removes the person from all Termine (others move up and get notified), then deletes the account. */

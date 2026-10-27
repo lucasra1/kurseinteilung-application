@@ -10,7 +10,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { StatusChip } from "@/components/termin-bits";
 import { TerminFields, type TerminValues } from "@/components/termin-fields";
 import { Button } from "@/components/ui/button";
-import type { StaffingStatus } from "@/lib/staffing";
+import type { Missing, Role } from "@/lib/staffing";
 import { hrefWith } from "@/lib/url";
 import { cn } from "@/lib/utils";
 
@@ -23,12 +23,9 @@ export function TerminRowForm({
   termin: TerminValues & {
     id: string;
     isPast: boolean;
-    status: StaffingStatus;
-    trainerCount: number;
-    backupCount: number;
-    trainersNeeded: number;
-    backupsNeeded: number;
-    signupCount: number;
+    missing: Missing;
+    isStaffed: boolean;
+    signups: { role: Role }[];
   };
 }) {
   const saved: TerminValues = {
@@ -37,6 +34,8 @@ export function TerminRowForm({
     endTime: termin.endTime,
     topic: termin.topic,
     location: termin.location,
+    instruktorenNeeded: termin.instruktorenNeeded,
+    praxisanleiterNeeded: termin.praxisanleiterNeeded,
   };
   const [values, setValues] = useState(saved);
   const [result, formAction] = useActionState(saveTermin, null);
@@ -77,7 +76,13 @@ export function TerminRowForm({
         </SubmitButton>
       </form>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 md:pl-10">
-        <StatusChip termin={termin} />
+        <StatusChip
+          termin={{
+            ...termin,
+            instruktorenNeeded: Number(saved.instruktorenNeeded),
+            praxisanleiterNeeded: Number(saved.praxisanleiterNeeded),
+          }}
+        />
         <Link
           href={hrefWith("/termine", { termin: termin.id })}
           className="text-[13px] font-medium text-zinc-700 underline-offset-4 hover:underline"
@@ -100,7 +105,7 @@ export function TerminRowForm({
             triggerIcon={<Trash2 aria-hidden="true" />}
             title={`${rowLabel} löschen?`}
             description={
-              termin.signupCount > 0
+              termin.signups.length > 0
                 ? "Eingetragene Personen werden per E-Mail informiert."
                 : "Für diesen Termin hat sich noch niemand eingetragen."
             }

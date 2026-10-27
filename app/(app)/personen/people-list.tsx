@@ -7,8 +7,9 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormMessage } from "@/components/form-message";
 import { Avatar } from "@/components/termin-bits";
 import { Input } from "@/components/ui/input";
+import { KIND_LABEL, KINDS, type Kind } from "@/lib/staffing";
 import { cn } from "@/lib/utils";
-import { deletePerson, toggleAdmin } from "./actions";
+import { deletePerson, toggleAdmin, toggleQualification } from "./actions";
 
 type Person = {
   id: string;
@@ -17,11 +18,13 @@ type Person = {
   phone: string | null;
   isAdmin: boolean;
   isEnvAdmin: boolean;
+  isInstruktor: boolean;
+  isPraxisanleiter: boolean;
   upcomingSignups: number;
 };
 
 const COLUMNS =
-  "md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.3fr)_9rem_7rem_3.5rem_2.75rem]";
+  "md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_8.5rem_14rem_5rem_3.5rem_2.75rem]";
 
 export function PeopleList({
   people,
@@ -69,6 +72,7 @@ export function PeopleList({
         <span>Name</span>
         <span>E-Mail</span>
         <span>Telefon</span>
+        <span>Qualifikation</span>
         <span>Termine</span>
         <span>Admin</span>
         <span />
@@ -112,6 +116,11 @@ export function PeopleList({
                 </span>
               )}
             </span>
+            <span className="col-start-1 flex flex-wrap gap-1.5 pl-[2.625rem] md:col-start-auto md:pl-0">
+              {KINDS.map((kind) => (
+                <QualificationToggle key={kind} person={person} kind={kind} />
+              ))}
+            </span>
             <span className="col-start-1 pl-[2.625rem] text-sm text-zinc-700 md:col-start-auto md:pl-0">
               {person.upcomingSignups === 0 ? "keine" : person.upcomingSignups}
               <span className="md:sr-only"> kommende Termine</span>
@@ -137,6 +146,53 @@ export function PeopleList({
         ))}
       </ul>
     </section>
+  );
+}
+
+function QualificationToggle({ person, kind }: { person: Person; kind: Kind }) {
+  const [result, formAction] = useActionState(toggleQualification, null);
+  const on =
+    kind === "instruktor" ? person.isInstruktor : person.isPraxisanleiter;
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="profileId" value={person.id} />
+      <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="value" value={on ? "false" : "true"} />
+      <QualificationButton
+        on={on}
+        label={KIND_LABEL[kind].one}
+        name={person.fullName}
+      />
+      {result && !result.ok && <FormMessage result={result} />}
+    </form>
+  );
+}
+
+function QualificationButton({
+  on,
+  label,
+  name,
+}: {
+  on: boolean;
+  label: string;
+  name: string;
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      aria-pressed={on}
+      aria-label={`${label}: ${name}`}
+      disabled={pending}
+      className={cn(
+        "flex h-9 items-center rounded-full border px-3 text-xs font-semibold transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50",
+        on
+          ? "border-foreground bg-foreground text-background"
+          : "border-dashed border-zinc-300 text-muted-foreground hover:border-zinc-400 hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 

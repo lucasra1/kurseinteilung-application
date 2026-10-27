@@ -7,6 +7,7 @@ import { isValidInviteToken } from "@/lib/dal/settings";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
 import { DomainError } from "@/lib/errors";
+import type { Qualifications } from "@/lib/staffing";
 import { supabaseService } from "@/lib/supabase/service";
 
 // Everything here is unguarded: these are the flows that let people log in.
@@ -39,14 +40,24 @@ async function sendMagicLink(email: string): Promise<void> {
 export async function sendLoginLink(email: string): Promise<void> {
   if (!(await hasProfile(email))) {
     if (!isEnvAdmin(email)) return;
-    await createAccount({ email, fullName: email.split("@")[0], phone: null });
+    await createAccount({
+      email,
+      fullName: email.split("@")[0],
+      phone: null,
+      isInstruktor: false,
+      isPraxisanleiter: false,
+    });
   }
   await sendMagicLink(email);
 }
 
 export async function registerViaInvite(
   token: string,
-  input: { fullName: string; email: string; phone: string | null },
+  input: {
+    fullName: string;
+    email: string;
+    phone: string | null;
+  } & Qualifications,
 ): Promise<void> {
   if (!(await isValidInviteToken(token))) {
     throw new DomainError("einladung-ungueltig");
