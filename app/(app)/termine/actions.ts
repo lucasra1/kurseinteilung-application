@@ -13,11 +13,12 @@ import {
   withdrawSelf,
 } from "@/lib/dal/signups";
 import { festschreibungMessage } from "@/lib/staffing";
-import { isBestaetigt, kindSchema, uuidSchema } from "@/lib/validation";
+import { bestaetigtSchema, kindSchema, uuidSchema } from "@/lib/validation";
 
 const signupFormSchema = z.object({
   terminId: uuidSchema,
   intent: z.enum(["eintragen", "abmelden", "uebernehmen"]),
+  bestaetigt: bestaetigtSchema,
 });
 
 /** One action for the trainer's own signup, so the panel's forms keep a stable action. */
@@ -27,7 +28,7 @@ export async function changeSignup(
 ): Promise<ActionResult> {
   return runAction(async () => {
     const values = Object.fromEntries(formData);
-    const { terminId, intent } = signupFormSchema.parse(values);
+    const { terminId, intent, bestaetigt } = signupFormSchema.parse(values);
     if (intent === "eintragen") {
       await signUpSelf(terminId, kindSchema.parse(values.kind));
       return "Du bist eingetragen.";
@@ -36,7 +37,7 @@ export async function changeSignup(
       await claimPlace(terminId);
       return "Du hast den Platz übernommen.";
     }
-    await withdrawSelf(terminId, isBestaetigt(formData));
+    await withdrawSelf(terminId, bestaetigt);
     return "Du bist ausgetragen.";
   });
 }
@@ -66,10 +67,10 @@ export async function removeSignupAction(
   formData: FormData,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const { terminId, profileId } = adminSignupForm.parse(
-      Object.fromEntries(formData),
-    );
-    await adminRemoveSignup(terminId, profileId, isBestaetigt(formData));
+    const { terminId, profileId, bestaetigt } = adminSignupForm
+      .extend({ bestaetigt: bestaetigtSchema })
+      .parse(Object.fromEntries(formData));
+    await adminRemoveSignup(terminId, profileId, bestaetigt);
     return "Ausgetragen.";
   });
 }
