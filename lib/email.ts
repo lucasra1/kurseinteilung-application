@@ -1,5 +1,6 @@
 import "server-only";
 import { Resend } from "resend";
+import { storeDemoMails } from "@/lib/dal/demo";
 import { env } from "@/lib/env";
 
 export type EmailMessage = { to: string; subject: string; text: string };
@@ -12,10 +13,14 @@ const BATCH_SIZE = 100;
 /**
  * Sends via Resend's batch API, one request per 100 emails, so a burst of notifications
  * stays within Resend's rate limit (2 requests/second). Without RESEND_API_KEY (local dev)
- * the emails are logged instead.
+ * the emails are logged instead; in demo mode they go to the demo mailbox.
  */
 export async function sendEmails(messages: EmailMessage[]): Promise<void> {
   if (messages.length === 0) return;
+  if (env.DEMO_MODE) {
+    await storeDemoMails(messages);
+    return;
+  }
   if (!resend) {
     for (const message of messages) {
       console.info(

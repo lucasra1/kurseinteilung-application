@@ -86,9 +86,16 @@ export function formatDaysUntil(date: string): string {
   return `in ${days} Tagen`;
 }
 
+/** ("2026-11-07", 3) → "2026-11-10"; negative `days` go back. */
+export function addDays(date: string, days: number): string {
+  return new Date(utcDate(date).getTime() + days * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
 /** "2026-11-07" → "2026-11-08" */
 export function nextDay(date: string): string {
-  return new Date(utcDate(date).getTime() + DAY_MS).toISOString().slice(0, 10);
+  return addDays(date, 1);
 }
 
 /** "09:00:00" → "09:00" */

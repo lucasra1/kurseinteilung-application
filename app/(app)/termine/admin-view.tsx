@@ -168,7 +168,7 @@ export async function AdminView({
           </Link>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div data-demo="kennzahlen" className="grid gap-3 sm:grid-cols-3">
           {STAT_CARDS.map((card) => {
             const active = status === card.status;
             const count = countOf(card.status);

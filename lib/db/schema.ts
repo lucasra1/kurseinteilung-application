@@ -137,3 +137,17 @@ export const appSettings = appSchema.table(
   },
   (t) => [check("app_settings_singleton_check", sql`${t.id} = 1`)],
 );
+
+/** Demo mode only (DEMO_MODE): notification emails land here instead of being sent. */
+export const demoMails = appSchema.table(
+  "demo_mails",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    toEmail: text().notNull(),
+    subject: text().notNull(),
+    body: text().notNull(),
+    readAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.toEmail, t.createdAt)],
+);

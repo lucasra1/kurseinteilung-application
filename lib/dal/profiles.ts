@@ -9,6 +9,7 @@ import {
 } from "@/lib/audit";
 import { logEvents } from "@/lib/dal/audit";
 import { isEnvAdmin, requireAdmin, requireUser } from "@/lib/dal/auth";
+import { createDemoAuthUser, deleteDemoAuthUser } from "@/lib/dal/demo";
 import { mutateStaffing, removeSignup } from "@/lib/dal/staffing-tx";
 import { todayInVienna } from "@/lib/dates";
 import { db } from "@/lib/db/client";
@@ -36,7 +37,9 @@ export async function createAccount(
     .where(eq(authUsers.email, input.email));
 
   let userId = existing?.id;
-  if (!userId) {
+  if (!userId && env.DEMO_MODE) {
+    userId = await createDemoAuthUser(input.email);
+  } else if (!userId) {
     const { data, error } = await supabaseService.auth.admin.createUser({
       email: input.email,
       email_confirm: true,
@@ -251,6 +254,10 @@ export async function removePerson(
     },
   });
 
+  if (env.DEMO_MODE) {
+    await deleteDemoAuthUser(profileId);
+    return;
+  }
   const { error } = await supabaseService.auth.admin.deleteUser(profileId);
   if (error) {
     console.error(`Auth-User ${profileId} konnte nicht gelöscht werden`, error);

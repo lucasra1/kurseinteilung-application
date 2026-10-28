@@ -21,6 +21,14 @@ const envSchema = z.object({
         .filter(Boolean),
     ),
   CRON_SECRET: z.string().min(1),
+  /**
+   * Demo instance only: anyone can act as anyone, emails land in the demo mailbox and the
+   * data is reset daily. Never set this for a deployment with real data.
+   */
+  DEMO_MODE: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 export const env = envSchema.parse({

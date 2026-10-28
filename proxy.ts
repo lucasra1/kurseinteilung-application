@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { DEMO_COOKIE, DEMO_PERSONA_HEADER } from "@/lib/demo";
 import { env } from "@/lib/env";
 
 const PUBLIC_PATHS = [
@@ -11,6 +12,8 @@ const PUBLIC_PATHS = [
 
 /** Refreshes the Supabase session cookie and sends logged-out users to /login. */
 export async function proxy(request: NextRequest) {
+  if (env.DEMO_MODE) return demoProxy(request);
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -50,6 +53,35 @@ export async function proxy(request: NextRequest) {
   }
 
   return response;
+}
+
+const DEMO_PUBLIC_PATHS = [
+  /^\/demo(\/|$)/,
+  /^\/einladung\//,
+  /^\/api\/keepalive$/,
+];
+
+/**
+ * Demo mode has no login: the person comes from the demo cookie, or in a Schaufenster
+ * frame from the persona header. A frame's first page load can't send headers, so its
+ * URL carries the person as `?als=`.
+ */
+function demoProxy(request: NextRequest) {
+  const { pathname, searchParams } = request.nextUrl;
+  if (pathname === "/login") {
+    return NextResponse.redirect(new URL("/demo", request.url));
+  }
+
+  const headers = new Headers(request.headers);
+  const als = searchParams.get("als");
+  if (als) headers.set(DEMO_PERSONA_HEADER, als);
+
+  const hasPersona =
+    headers.has(DEMO_PERSONA_HEADER) || request.cookies.has(DEMO_COOKIE);
+  if (!hasPersona && !DEMO_PUBLIC_PATHS.some((path) => path.test(pathname))) {
+    return NextResponse.redirect(new URL("/demo", request.url));
+  }
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

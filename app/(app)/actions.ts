@@ -5,6 +5,8 @@ import { z } from "zod";
 import { type DataResult, runQuery } from "@/lib/action-result";
 import type { HistoryView } from "@/lib/audit-text";
 import { getHistory } from "@/lib/dal/audit";
+import { setDemoPersona } from "@/lib/dal/demo";
+import { env } from "@/lib/env";
 import {
   BEREICHE,
   type HistorySource,
@@ -14,6 +16,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { uuidSchema } from "@/lib/validation";
 
 export async function logout(): Promise<void> {
+  if (env.DEMO_MODE) {
+    await setDemoPersona(null);
+    redirect("/demo");
+  }
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
   redirect("/login");

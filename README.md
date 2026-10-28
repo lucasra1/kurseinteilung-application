@@ -60,6 +60,35 @@ Migrationen laufen bei jedem Vercel-Build automatisch (`buildCommand` in [`verce
 4. **Settings → Domains**: `<domain>` hinzufügen und den angezeigten DNS-Eintrag in Cloudflare anlegen, mit Proxy-Status **DNS only** (graue Wolke).
 5. Der tägliche Cron-Job aus [`vercel.json`](vercel.json) ruft `/api/keepalive` auf. Vercel schickt `CRON_SECRET` automatisch mit.
 
+## Demo-Instanz
+
+Eine eigene Instanz zum Vorführen, z. B. für Entscheider:innen: dieselbe App mit erfundenen Personen und Kursen, ohne Login. Unter `/demo` gibt es drei Wege hinein:
+
+- **Schaufenster** (`/demo/schaufenster`): Laptop (Anna, Koordination) und Handy (Ben, Clara, eine neue Person) nebeneinander, beide live. Eine Tour spielt die Geschichte von selbst ab: Lücken sehen, Kurs anlegen, per Link registrieren, eintragen, kurzfristig austragen (Platz wird ausgeschrieben), Backup übernimmt, E-Mails, Lücke schließen, Verlauf. Ein Klick in ein Gerät hält sie an, nach 90 Sekunden ohne Klick beginnt sie von vorn. `?modus=schritte` startet Schritt für Schritt.
+- **Rundgang in der App**: dieselbe Tour in einem Fenster, passt aufs Handy.
+- **Selbst ausprobieren**: als Anna, Ben oder Clara; oben in der Demo-Leiste wechselt man die Person.
+
+E-Mails werden nicht verschickt, sondern landen im **Demo-Postfach** der jeweiligen Person (mit Banner, wenn eine neue ankommt). Die Daten (`lib/demo-data.ts`, Termine relativ zu heute) werden bei jedem Start von Schaufenster oder Rundgang, über „Zurücksetzen“ und jede Nacht per Cron neu angelegt. Wer gleichzeitig dieselbe Demo benutzt, sieht die Änderungen der anderen.
+
+> **`DEMO_MODE=true` nur in einer eigenen Instanz mit eigener Datenbank setzen.** Damit kann jede:r als jede Person auftreten, und das Zurücksetzen löscht alle Personen, Kurse und Termine.
+
+### Lokal
+
+Eine eigene Datenbank im lokalen Supabase-Postgres, damit die Entwicklungsdaten bleiben:
+
+```bash
+docker exec supabase_db_kurseinteilung psql -U postgres -c "create database kurseinteilung_demo"
+docker exec -i supabase_db_kurseinteilung psql -U postgres -d kurseinteilung_demo < supabase/demo-database.sql
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/kurseinteilung_demo pnpm db:migrate
+DEMO_MODE=true DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/kurseinteilung_demo pnpm dev
+```
+
+Dann http://localhost:3000/demo öffnen.
+
+### Gehostet
+
+Ein zweites Supabase-Projekt und ein zweites Vercel-Projekt aus demselben Repo, wie unter Deployment beschrieben, aber ohne Domain-, Resend- und Auth-Einstellungen (die Demo verschickt nichts und nutzt Supabase Auth nicht). Zusätzlich `DEMO_MODE=true` setzen, `ADMIN_EMAILS` leer lassen, `APP_URL` auf die Demo-URL, `EMAIL_FROM` und `CRON_SECRET` auf beliebige Werte. Die Demo legt ihre Personen direkt in `auth.users` an; die Tabelle bringt jedes Supabase-Projekt mit.
+
 ## Hinweise
 
 - **Supabase pausiert Gratis-Projekte nach 7 Tagen ohne Aktivität.** Der tägliche Keepalive-Cron verhindert das.

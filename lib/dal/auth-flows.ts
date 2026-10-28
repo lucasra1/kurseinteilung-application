@@ -6,18 +6,19 @@ import { createAccount } from "@/lib/dal/profiles";
 import { isValidInviteToken } from "@/lib/dal/settings";
 import { db } from "@/lib/db/client";
 import { profiles } from "@/lib/db/schema";
+import { env } from "@/lib/env";
 import { DomainError } from "@/lib/errors";
 import type { Qualifications } from "@/lib/staffing";
 import { supabaseService } from "@/lib/supabase/service";
 
 // Everything here is unguarded: these are the flows that let people log in.
 
-async function hasProfile(email: string): Promise<boolean> {
+async function profileIdByEmail(email: string): Promise<string | undefined> {
   const [profile] = await db
     .select({ id: profiles.id })
     .from(profiles)
     .where(eq(profiles.email, email));
-  return Boolean(profile);
+  return profile?.id;
 }
 
 async function sendMagicLink(email: string): Promise<void> {
@@ -38,7 +39,7 @@ async function sendMagicLink(email: string): Promise<void> {
  * an account on their first login.
  */
 export async function sendLoginLink(email: string): Promise<void> {
-  if (!(await hasProfile(email))) {
+  if (!(await profileIdByEmail(email))) {
     if (!isEnvAdmin(email)) return;
     await createAccount(
       {
@@ -54,6 +55,7 @@ export async function sendLoginLink(email: string): Promise<void> {
   await sendMagicLink(email);
 }
 
+/** Returns the profile id. In demo mode there is no login link: the caller logs them in. */
 export async function registerViaInvite(
   token: string,
   input: {
@@ -61,12 +63,13 @@ export async function registerViaInvite(
     email: string;
     phone: string | null;
   } & Qualifications,
-): Promise<void> {
+): Promise<string> {
   if (!(await isValidInviteToken(token))) {
     throw new DomainError("einladung-ungueltig");
   }
-  if (!(await hasProfile(input.email))) {
-    await createAccount(input, "einladung");
-  }
-  await sendMagicLink(input.email);
+  const profileId =
+    (await profileIdByEmail(input.email)) ??
+    (await createAccount(input, "einladung"));
+  if (!env.DEMO_MODE) await sendMagicLink(input.email);
+  return profileId;
 }
